@@ -1,0 +1,2082 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>ELIMINATOR</title>
+
+  <style>
+    /* =========================
+       ELIMINATOR — v4 (glass+fx)
+       - Titre / sous-titre / phrases flottantes HORS cadre
+       - Menu 100% fonctionnel (onglets)
+       - Glassmorphism (vitré/translucide) + lueurs + grain
+       - Import robuste multi-formats
+       - Historique (undo/redo) + journal d’évènements
+       - Rapport quotidien + stats par catégories
+       - Barre globale: commence pleine et DIMINUE (inverse progression)
+       - Barre tâche: commence pleine et DIMINUE
+       ========================= */
+
+    :root{
+      --bg0:#06070b;
+      --bg1:#0a0c14;
+
+      --fg:#eaf0ff;
+      --muted:#a8b3c7;
+      --dim:#7d879a;
+
+      --line:rgba(255,255,255,.12);
+      --line2:rgba(255,255,255,.18);
+
+      --glassA:rgba(18,22,36,.55);
+      --glassB:rgba(10,12,22,.44);
+
+      --chip:rgba(0,0,0,.18);
+
+      --whiteA:rgba(245,248,255,.95);
+      --whiteB:rgba(170,188,220,.85);
+
+      --shadow: 0 24px 80px rgba(0,0,0,.66);
+      --shadow2: 0 10px 40px rgba(0,0,0,.52);
+
+      --r:26px;
+      --r2:18px;
+
+      --blur: 14px;
+
+      --focusGlow: rgba(220,235,255,.18);
+      --pulseGlow: rgba(245,248,255,.12);
+
+      --ok: rgba(214, 255, 231, .85);
+      --warn: rgba(255, 238, 200, .85);
+      --bad: rgba(255, 205, 205, .85);
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(1000px 600px at 50% 0%, rgba(240,245,255,.10), transparent 62%),
+        radial-gradient(900px 520px at 20% 18%, rgba(180,200,255,.08), transparent 60%),
+        radial-gradient(900px 520px at 80% 30%, rgba(240,245,255,.05), transparent 60%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      overflow-x:hidden;
+    }
+
+    /* FX layers */
+    canvas#fx { position:fixed; inset:0; pointer-events:none; z-index:120; }
+    .noise{
+      position:fixed; inset:0;
+      pointer-events:none;
+      z-index:2;
+      opacity:.10;
+      mix-blend-mode: overlay;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.45'/%3E%3C/svg%3E");
+      background-size: 160px 160px;
+    }
+
+    .shell{
+      min-height:100vh;
+      display:grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 10px;
+      position:relative;
+      z-index:3;
+    }
+
+    /* =========================
+       HERO (outside panel)
+       ========================= */
+    .hero{
+      padding: 18px 14px 0;
+      display:grid;
+      place-items:center;
+      gap: 8px;
+      text-align:center;
+      user-select:none;
+    }
+    .hero h1{
+      margin:0;
+      font-size: clamp(34px, 6.4vw, 76px);
+      font-weight: 1100;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      line-height:1;
+      text-shadow: 0 16px 60px rgba(0,0,0,.62);
+    }
+    .hero p{
+      margin:0;
+      font-size: 12px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .floatLine{
+      min-height: 18px;
+      font-size: 12px;
+      letter-spacing: .10em;
+      text-transform: uppercase;
+      font-weight: 1000;
+      color: rgba(245,248,255,.92);
+      opacity:.94;
+      text-shadow: 0 10px 30px rgba(0,0,0,.55);
+    }
+
+    /* =========================
+       TOPBAR (glass chips)
+       ========================= */
+    .topbar{
+      padding: 10px 14px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap: 10px;
+      flex-wrap:wrap;
+    }
+    .topbar.hidden{ display:none; }
+
+    .left, .right{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    .btn{
+      border:1px solid var(--line);
+      background: rgba(0,0,0,.16);
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 10px 12px;
+      cursor:pointer;
+      font-weight: 1000;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-size: 12px;
+      user-select:none;
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      position:relative;
+      overflow:hidden;
+    }
+    .btn::before{
+      content:"";
+      position:absolute; inset:-2px;
+      background: radial-gradient(520px 140px at 20% 10%, rgba(255,255,255,.10), transparent 60%),
+                  radial-gradient(520px 140px at 80% 0%, rgba(255,255,255,.06), transparent 60%);
+      opacity:.85;
+      pointer-events:none;
+    }
+    .btn:hover{ border-color: var(--line2); }
+    .btn:active{ transform: translateY(1px); }
+    .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border:1px solid var(--line);
+      background: rgba(0,0,0,.14);
+      color: var(--muted);
+      font-weight: 1000;
+      font-size: 12px;
+      user-select:none;
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      box-shadow: 0 10px 26px rgba(0,0,0,.22);
+    }
+    .chip b{ color: var(--fg); font-weight: 1100; }
+
+    /* =========================
+       MAIN PANEL (glass card)
+       ========================= */
+    .stage{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      padding: 0 14px 8px;
+    }
+
+    .card{
+      width: min(1060px, 96vw);
+      border-radius: var(--r);
+      border: 1px solid rgba(255,255,255,.12);
+      background:
+        radial-gradient(1200px 520px at 50% 0%, rgba(245,248,255,.13), transparent 60%),
+        linear-gradient(180deg, var(--glassA), var(--glassB));
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      box-shadow: var(--shadow);
+      padding: 18px;
+      display:grid;
+      gap: 14px;
+      position:relative;
+      overflow:hidden;
+    }
+
+    /* specular highlight */
+    .card::before{
+      content:"";
+      position:absolute; inset:-3px;
+      background:
+        radial-gradient(700px 260px at 30% 0%, rgba(255,255,255,.14), transparent 62%),
+        radial-gradient(700px 260px at 80% 10%, rgba(255,255,255,.08), transparent 62%);
+      opacity:.85;
+      pointer-events:none;
+    }
+    /* faint border glow */
+    .card::after{
+      content:"";
+      position:absolute; inset:-1px;
+      border-radius: var(--r);
+      border: 1px solid rgba(255,255,255,.10);
+      opacity:.65;
+      pointer-events:none;
+      filter: drop-shadow(0 0 26px rgba(220,235,255,.08));
+    }
+
+    /* =========================
+       Progress bars (FULL -> EMPTY)
+       ========================= */
+    .barWrap{
+      height: 26px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      overflow:hidden;
+      position:relative;
+      box-shadow: 0 12px 30px rgba(0,0,0,.25);
+    }
+    .barFill{
+      height:100%;
+      width:100%;
+      background: linear-gradient(90deg, var(--whiteA), var(--whiteB));
+      transition: width 220ms ease;
+      filter: drop-shadow(0 0 18px rgba(220,235,255,.18));
+    }
+    .barWrap .shine{
+      position:absolute; inset:-2px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent);
+      transform: translateX(-60%);
+      opacity:.45;
+      pointer-events:none;
+      animation: shine 3.8s ease-in-out infinite;
+    }
+    @keyframes shine{
+      0%{ transform: translateX(-65%); }
+      55%{ transform: translateX(135%); }
+      100%{ transform: translateX(135%); }
+    }
+
+    .target{
+      display:grid;
+      gap: 10px;
+      text-align:center;
+    }
+    .targetTitle{
+      font-size: clamp(22px, 3.8vw, 36px);
+      font-weight: 1100;
+      line-height: 1.15;
+      word-break: break-word;
+      padding: 0 6px;
+      text-shadow: 0 14px 40px rgba(0,0,0,.52);
+    }
+    .targetMeta{
+      color: var(--muted);
+      font-weight: 900;
+      font-size: 12px;
+      letter-spacing: .04em;
+    }
+
+    .sbarWrap{
+      height: 12px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      overflow:hidden;
+      width: min(760px, 92vw);
+      margin: 0 auto;
+      box-shadow: 0 10px 24px rgba(0,0,0,.22);
+    }
+    .sbarFill{
+      height:100%;
+      width:100%;
+      background: linear-gradient(90deg, rgba(245,248,255,.82), rgba(170,188,220,.65));
+      transition: width 200ms ease;
+      filter: drop-shadow(0 0 14px rgba(220,235,255,.16));
+    }
+
+    /* =========================
+       Actions (big central button + big roulette)
+       ========================= */
+    .actions{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      gap: 16px;
+      flex-wrap:wrap;
+      margin-top: 4px;
+    }
+
+    .roulette{
+      width: 118px;
+      height: 118px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.20);
+      background:
+        radial-gradient(closest-side, rgba(255,255,255,.20), rgba(0,0,0,.06)),
+        linear-gradient(180deg, rgba(0,0,0,.14), rgba(0,0,0,.32));
+      color: var(--fg);
+      cursor:pointer;
+      user-select:none;
+      font-weight: 1100;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      display:grid;
+      place-items:center;
+      position:relative;
+      box-shadow: var(--shadow2);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+    }
+    .roulette .ring{
+      position:absolute; inset:12px;
+      border-radius:999px;
+      border:2px dashed rgba(255,255,255,.18);
+      opacity:.90;
+    }
+    .roulette .inner{
+      position:absolute; inset:28px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.10);
+      opacity:.90;
+    }
+    .roulette:hover{ border-color: rgba(255,255,255,.34); }
+    .roulette:active{ transform: translateY(1px); }
+    .roulette:disabled{ opacity:.5; cursor:not-allowed; }
+    .roulette.spinning .ring{ animation: spin .52s linear infinite; }
+    .roulette.spinning .inner{ animation: spin2 .86s linear infinite; }
+    @keyframes spin{ from{ transform: rotate(0deg);} to{ transform: rotate(360deg);} }
+    @keyframes spin2{ from{ transform: rotate(360deg);} to{ transform: rotate(0deg);} }
+
+    .dego{
+      min-width: min(720px, 88vw);
+      min-height: 78px;
+      border-radius: 22px;
+      border:1px solid rgba(255,255,255,.18);
+      background:
+        radial-gradient(900px 280px at 50% 15%, rgba(255,255,255,.14), transparent 62%),
+        linear-gradient(180deg, rgba(0,0,0,.16), rgba(0,0,0,.34));
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      box-shadow: var(--shadow2);
+      color: var(--fg);
+      cursor:pointer;
+      font-weight: 1100;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      position:relative;
+      overflow:hidden;
+    }
+    .dego::after{
+      content:"";
+      position:absolute; inset:-2px;
+      background: radial-gradient(540px 160px at 50% 25%, rgba(255,255,255,.12), transparent 60%);
+      opacity:.80;
+      pointer-events:none;
+      transition: opacity 160ms ease;
+    }
+    .dego:hover{ border-color: rgba(255,255,255,.30); }
+    .dego:hover::after{ opacity:1; }
+    .dego:active{ transform: translateY(1px); }
+    .dego:disabled{ opacity:.5; cursor:not-allowed; }
+
+    .subActions{
+      display:flex;
+      justify-content:center;
+      gap: 10px;
+      flex-wrap:wrap;
+      margin-top: 2px;
+    }
+
+    .hint{
+      text-align:center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 0 14px 18px;
+      line-height:1.25;
+      opacity:.92;
+    }
+    .hint.hidden{ display:none; }
+
+    /* =========================
+       Drawer (menu)
+       ========================= */
+    .overlay{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.62);
+      opacity:0;
+      pointer-events:none;
+      transition: opacity 160ms ease;
+      z-index: 90;
+    }
+    .overlay.show{ opacity:1; pointer-events:auto; }
+
+    .drawer{
+      position:fixed; top:0; left:0;
+      height:100vh;
+      width: min(680px, 94vw);
+      padding: 14px;
+      display:grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 12px;
+      transform: translateX(-110%);
+      transition: transform 180ms ease;
+      z-index: 100;
+      border-right: 1px solid rgba(255,255,255,.12);
+      background:
+        radial-gradient(900px 520px at 40% 0%, rgba(245,248,255,.12), transparent 62%),
+        linear-gradient(180deg, rgba(18,22,36,.62), rgba(10,12,22,.58));
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      box-shadow: var(--shadow);
+      touch-action: pan-y;
+    }
+    .drawer.show{ transform: translateX(0); }
+
+    .drawerHeader{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap: 10px;
+    }
+    .drawerHeader .h{
+      font-size: 12px;
+      font-weight: 1100;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .tabs{
+      display:flex;
+      gap: 8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .tab{
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.16);
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 8px 10px;
+      cursor:pointer;
+      font-weight: 1000;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-size: 12px;
+      user-select:none;
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      position:relative;
+      overflow:hidden;
+    }
+    .tab.active{ border-color: rgba(255,255,255,.26); }
+    .tab:hover{ border-color: rgba(255,255,255,.22); }
+
+    .drawerBody{ overflow:auto; padding-right: 4px; display:grid; gap: 12px; align-content:start; }
+
+    .panel{
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.16);
+      border-radius: var(--r2);
+      padding: 12px;
+      display:grid;
+      gap: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      position:relative;
+      overflow:hidden;
+    }
+    .panel::before{
+      content:"";
+      position:absolute; inset:-2px;
+      background: radial-gradient(520px 200px at 20% 0%, rgba(255,255,255,.10), transparent 62%);
+      pointer-events:none;
+      opacity:.75;
+    }
+    .pTitle{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap: 10px;
+      font-size: 11px;
+      font-weight: 1100;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    textarea, select, input[type="text"]{
+      width:100%;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.20);
+      color: var(--fg);
+      border-radius: 14px;
+      padding: 10px 12px;
+      outline:none;
+      font: inherit;
+      font-size: 13px;
+      line-height:1.35;
+      backdrop-filter: blur(calc(var(--blur) - 4px));
+      -webkit-backdrop-filter: blur(calc(var(--blur) - 4px));
+    }
+    textarea{ min-height: 160px; resize: vertical; }
+    textarea:focus, select:focus, input:focus{ border-color: rgba(255,255,255,.22); }
+
+    .rowBtns{
+      display:flex;
+      justify-content:flex-end;
+      gap: 10px;
+      flex-wrap:wrap;
+    }
+
+    .list{ display:grid; gap: 8px; }
+
+    .trow{
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.14);
+      border-radius: 16px;
+      padding: 10px;
+      display:grid;
+      gap: 8px;
+      backdrop-filter: blur(calc(var(--blur) - 4px));
+      -webkit-backdrop-filter: blur(calc(var(--blur) - 4px));
+      box-shadow: 0 8px 24px rgba(0,0,0,.22);
+    }
+    .trowTop{
+      display:flex;
+      justify-content:space-between;
+      gap: 10px;
+      align-items:flex-start;
+    }
+    .tname{
+      font-weight: 1050;
+      font-size: 14px;
+      line-height:1.2;
+      word-break: break-word;
+    }
+    .tmini{
+      color: var(--muted);
+      font-size: 12px;
+      display:flex;
+      gap: 8px;
+      flex-wrap:wrap;
+      line-height:1.15;
+      font-weight: 900;
+    }
+    .tacts{ display:flex; gap: 8px; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+    .done{ text-decoration: line-through; opacity:.55; }
+
+    .miniBar{
+      height: 10px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      overflow:hidden;
+    }
+    .miniFill{
+      height:100%;
+      background: linear-gradient(90deg, rgba(245,248,255,.78), rgba(170,188,220,.62));
+      transition: width 180ms ease;
+    }
+
+    details{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: 16px;
+      overflow:hidden;
+      background: rgba(0,0,0,.12);
+      backdrop-filter: blur(calc(var(--blur) - 4px));
+      -webkit-backdrop-filter: blur(calc(var(--blur) - 4px));
+    }
+    summary{
+      cursor:pointer;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-weight: 1100;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      font-size: 11px;
+      user-select:none;
+    }
+    details > .inside{ padding: 10px 12px 12px; display:grid; gap: 10px; }
+
+    .toast{
+      position:fixed;
+      left:50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.62);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      padding: 12px 14px;
+      color: var(--fg);
+      font-size: 13px;
+      opacity:0;
+      pointer-events:none;
+      transition: opacity 160ms ease, transform 160ms ease;
+      max-width: min(920px, calc(100vw - 24px));
+      box-shadow: var(--shadow2);
+      white-space: pre-wrap;
+      z-index: 130;
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+    }
+    .toast.show{ opacity:1; transform: translateX(-50%) translateY(-6px); }
+
+    /* Responsive: smaller font on phone + still big task title */
+    @media (max-width: 520px){
+      .tab, .btn{ font-size: 11px; padding: 9px 10px; }
+      .chip{ font-size: 11px; }
+      textarea, select, input[type="text"]{ font-size: 12px; }
+      .roulette{ width: 104px; height:104px; }
+      .dego{ min-width: 92vw; letter-spacing: .12em; }
+      .hero h1{ letter-spacing: .14em; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="noise"></div>
+  <canvas id="fx"></canvas>
+
+  <div class="shell">
+    <!-- ===== HERO (OUTSIDE THE PANEL) ===== -->
+    <header class="hero">
+      <h1>ELIMINATOR</h1>
+      <p>Dégommez-les tous</p>
+      <div class="floatLine" id="floatLine">—</div>
+    </header>
+
+    <!-- ===== TOPBAR ===== -->
+    <div class="topbar" id="topbar">
+      <div class="left">
+        <button class="btn" id="btnMenu">MENU</button>
+        <button class="btn" id="btnNewDay">Nouveau jour</button>
+      </div>
+
+      <div class="right">
+        <span class="chip">Départ <b id="startTasks">0</b> tâches</span>
+        <span class="chip">Reste <b id="leftTasks">0</b> tâches</span>
+        <span class="chip">ETH <b id="leftEth">0</b>/<b id="startEth">0</b></span>
+        <span class="chip">Éliminé <b id="elimEth">0</b></span>
+      </div>
+    </div>
+
+    <!-- ===== MAIN GLASS PANEL ===== -->
+    <div class="stage">
+      <section class="card" aria-label="Focus">
+        <div class="barWrap" aria-label="Progression globale">
+          <div class="barFill" id="gFill"></div>
+          <div class="shine"></div>
+        </div>
+
+        <div class="target">
+          <div class="targetTitle" id="focusTitle">CIBLE EN COURS DE RECHERCHE</div>
+          <div class="targetMeta" id="focusMeta">—</div>
+
+          <div class="sbarWrap" aria-label="Progression tâche">
+            <div class="sbarFill" id="tFill"></div>
+          </div>
+
+          <div class="actions">
+            <button class="roulette" id="btnRoulette" aria-label="Roulette">
+              <span class="ring"></span>
+              <span class="inner"></span>
+              R
+            </button>
+
+            <button class="dego" id="btnDego">Dégommer 1 ethorion</button>
+          </div>
+
+          <div class="subActions">
+            <button class="btn" id="btnNotesTask">Notes tâche</button>
+            <button class="btn" id="btnNotesDay">Notes jour</button>
+            <button class="btn" id="btnDone">Terminer</button>
+            <button class="btn" id="btnSkip">Passer</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="hint" id="hint">
+      Import: mets une ligne de catégorie puis des tâches (tirets/puces/numéros). R=roulette · D=dégommage · M=menu · Ctrl/⌘+Enter=ajouter depuis inbox.
+    </div>
+  </div>
+
+  <!-- ===== Drawer ===== -->
+  <div class="overlay" id="overlay"></div>
+  <aside class="drawer" id="drawer" aria-label="Menu latéral">
+    <div class="drawerHeader">
+      <div class="h">MENU</div>
+      <button class="btn" id="btnClose">FERMER</button>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+    <div class="drawerBody" id="drawerBody"></div>
+
+    <div class="rowBtns">
+      <button class="btn" id="btnUndo">UNDO</button>
+      <button class="btn" id="btnRedo">REDO</button>
+    </div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* =========================
+     Storage
+     ========================= */
+  const LS_KEY = "eliminator_v4_glass";
+  const MAX_HISTORY = 60;
+
+  /* =========================
+     DOM helpers
+     ========================= */
+  const $ = (id)=>document.getElementById(id);
+  const now = ()=>Date.now();
+  const clamp = (n,a,b)=>Math.max(a, Math.min(b,n));
+  const uid = ()=> Math.random().toString(36).slice(2,10)+"-"+Date.now().toString(36);
+  const pick = (arr)=> arr[Math.floor(Math.random()*arr.length)];
+  const esc = (s)=> String(s??"").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c]));
+
+  function isoDay(d = new Date()){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const da = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${da}`;
+  }
+
+  /* =========================
+     Elements
+     ========================= */
+  const startTasksEl = $("startTasks");
+  const leftTasksEl  = $("leftTasks");
+  const startEthEl   = $("startEth");
+  const leftEthEl    = $("leftEth");
+  const elimEthEl    = $("elimEth");
+
+  const gFill = $("gFill");
+  const tFill = $("tFill");
+
+  const focusTitle = $("focusTitle");
+  const focusMeta = $("focusMeta");
+  const floatLine = $("floatLine");
+
+  const btnMenu = $("btnMenu");
+  const btnNewDay = $("btnNewDay");
+  const btnRoulette = $("btnRoulette");
+  const btnDego = $("btnDego");
+  const btnNotesTask = $("btnNotesTask");
+  const btnNotesDay = $("btnNotesDay");
+  const btnDone = $("btnDone");
+  const btnSkip = $("btnSkip");
+
+  const overlay = $("overlay");
+  const drawer = $("drawer");
+  const btnClose = $("btnClose");
+  const tabs = $("tabs");
+  const drawerBody = $("drawerBody");
+  const btnUndo = $("btnUndo");
+  const btnRedo = $("btnRedo");
+
+  const topbar = $("topbar");
+  const hint = $("hint");
+  const toast = $("toast");
+
+  const fxCanvas = $("fx");
+  const fx = fxCanvas.getContext("2d");
+
+  /* =========================
+     Copy / phrases
+     ========================= */
+  const FLOAT_IDLE = [
+    "respire. une cible à la fois.",
+    "petit pas, gros nettoyage.",
+    "objectif: une action. pas un roman.",
+    "tu choisis la cible, tu fais le coup.",
+    "dégommage propre, cerveau content."
+  ];
+  const FLOAT_LOCK = [
+    "cible verrouillée.",
+    "priorité capturée.",
+    "ok. maintenant: exécution.",
+    "on avance.",
+    "focus activé."
+  ];
+  const LINES = [
+    "ETHORION DÉGOMMÉ.",
+    "BIM. UN EN MOINS.",
+    "PROPRE.",
+    "ÇA DESCEND.",
+    "OK."
+  ];
+  const DONE_LINES = [
+    "TÂCHE TERMINÉE.",
+    "CIBLE ÉLIMINÉE.",
+    "FINI. NEXT.",
+    "RANGÉ DANS LE PASSÉ.",
+    "OK. PAS MAL."
+  ];
+
+  function setFloat(text){
+    floatLine.textContent = (text && String(text).trim()) ? text : "—";
+  }
+
+  /* =========================
+     State model
+     ========================= */
+  function buildSets(){
+    const daily = [
+      "QUOTIDIEN — SOUTIEN",
+      "- Vérifier horaires cours + adapter planning consults — 2 ethorions — importance 3",
+      "- Trier inbox mails pro (5 min) — 1 ethorion — importance 2",
+      "- Lister 3 priorités réelles — 1 ethorion — importance 2",
+      "- Préparer 1 appel difficile — 2 ethorions — importance 2",
+      "- Reset bureau (10 min) — 2 ethorions — importance 1"
+    ];
+    const consult = [
+      "CONSULTATIONS",
+      "- Patient — Voir le/la patient·e — 2 ethorions — importance 3",
+      "- Patient — Note de consultation — 2 ethorions — importance 3",
+      "- Patient — Ordo / plan — 1 ethorion — importance 2"
+    ];
+    return [
+      { id:"set_daily", name:"Quotidien", lines: daily },
+      { id:"set_consult", name:"Consultations", lines: consult }
+    ];
+  }
+
+  function initial(){
+    const day = isoDay();
+    return {
+      version: 4,
+      day: { id: day, startTasks: 0, startEth: 0 },
+      focusId: null,
+
+      ui: { activeTab:"inbox", sort:"order", topbarHidden:false, hintHidden:false },
+
+      energy: { level:2, motivation:2 }, // 1..3 influences roulette
+
+      tasks: [],
+
+      dayNotes: "",
+      events: [], // visible log
+      reports: {}, // per-day reports summary
+
+      history: { undo: [], redo: [] },
+
+      sets: buildSets()
+    };
+  }
+
+  let state = load() || initial();
+
+  function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(!raw) return null;
+      const obj = JSON.parse(raw);
+      if(!obj || !Array.isArray(obj.tasks)) return null;
+
+      // migrations / defaults
+      obj.version = 4;
+      if(!obj.day) obj.day = initial().day;
+      if(!obj.ui) obj.ui = initial().ui;
+      if(!obj.energy) obj.energy = initial().energy;
+      if(!obj.history) obj.history = {undo:[], redo:[]};
+      if(!obj.events) obj.events = [];
+      if(!obj.reports) obj.reports = {};
+      if(!obj.sets) obj.sets = buildSets();
+      if(typeof obj.dayNotes !== "string") obj.dayNotes = "";
+
+      return obj;
+    }catch{ return null; }
+  }
+
+  /* =========================
+     Undo / Redo
+     ========================= */
+  function snapshot(){
+    const s = structuredClone({...state});
+    s.history = {undo:[], redo:[]};
+    return s;
+  }
+
+  function logEvent(text){
+    state.events.push({ t: now(), text: String(text).slice(0,240) });
+    state.events = state.events.slice(-400);
+  }
+
+  function pushHistory(label){
+    state.history.undo.push(snapshot());
+    if(state.history.undo.length > MAX_HISTORY) state.history.undo.shift();
+    state.history.redo = [];
+    if(label) logEvent(label);
+    save();
+    updateUndoRedo();
+  }
+
+  function undo(){
+    if(!state.history.undo.length) return;
+    const prev = state.history.undo.pop();
+    const cur = snapshot();
+    state.history.redo.push(cur);
+    const keep = state.history;
+    state = {...prev, history: keep};
+    save();
+    renderAll();
+  }
+
+  function redo(){
+    if(!state.history.redo.length) return;
+    const next = state.history.redo.pop();
+    const cur = snapshot();
+    state.history.undo.push(cur);
+    const keep = state.history;
+    state = {...next, history: keep};
+    save();
+    renderAll();
+  }
+
+  function updateUndoRedo(){
+    btnUndo.disabled = state.history.undo.length===0;
+    btnRedo.disabled = state.history.redo.length===0;
+  }
+
+  /* =========================
+     Day baseline + reports
+     ========================= */
+  function ensureDay(){
+    const today = isoDay();
+    if(state.day.id !== today){
+      // close previous day report
+      finalizeDayReport(state.day.id);
+      // new day baseline
+      state.day.id = today;
+      state.day.startTasks = 0;
+      state.day.startEth = 0;
+      state.dayNotes = "";
+      logEvent("Changement de jour");
+      save();
+    }
+    if(state.day.startTasks===0 && state.day.startEth===0){
+      setDayBaseline("Départ fixé");
+    }
+  }
+
+  function setDayBaseline(label){
+    const active = state.tasks.filter(t=>!t.done);
+    state.day.startTasks = active.length;
+    state.day.startEth = active.reduce((a,t)=>a + (t.ethorionRemaining||0), 0);
+    logEvent(label || "Départ fixé");
+    save();
+  }
+
+  function finalizeDayReport(dayId){
+    // compute snapshot summary (safe even if empty)
+    const active = state.tasks.filter(t=>!t.done);
+    const done = state.tasks.filter(t=>t.done);
+    const leftEth = active.reduce((a,t)=>a+(t.ethorionRemaining||0),0);
+    const startEth = state.day.startEth || 0;
+    const elimEth = Math.max(0, startEth - leftEth);
+
+    // per-category stats on remaining
+    const catMap = {};
+    active.forEach(t=>{
+      const c = t.category || "Sans catégorie";
+      catMap[c] = (catMap[c]||0) + (t.ethorionRemaining||0);
+    });
+
+    state.reports[dayId] = {
+      day: dayId,
+      startTasks: state.day.startTasks || 0,
+      startEth: startEth,
+      leftTasks: active.length,
+      leftEth: leftEth,
+      doneTasks: done.length,
+      elimEth: elimEth,
+      catRemainingEth: catMap,
+      savedAt: now()
+    };
+  }
+
+  function newDay(){
+    pushHistory("Nouveau jour");
+    finalizeDayReport(state.day.id);
+    state.day.id = isoDay();
+    setDayBaseline("Nouveau jour");
+    state.dayNotes = "";
+    save();
+    renderAll();
+    showToast("Nouveau jour.", 1800);
+  }
+
+  /* =========================
+     Parsing import (very permissive)
+     - category lines: any line not starting with bullet/number
+     - accepts separators: " - ", " — ", " – "
+     - detects: ethorion(s), eth, minutes, min, importance/prio/priorité
+     ========================= */
+  function cleanLine(s){
+    return String(s||"").replace(/[|¦]+/g," ").replace(/\s{2,}/g," ").trim();
+  }
+  function isTaskLike(line){
+    return /^(\s*[-*•—–]\s+|\s*\d+[\.\)]\s+)/.test(line);
+  }
+  function stripTaskPrefix(line){
+    return line.replace(/^(\s*[-*•—–]\s+|\s*\d+[\.\)]\s+)/, "").trim();
+  }
+  function parseEthorion(text){
+    const t = text.toLowerCase();
+    const m = t.match(/(\d{1,2})\s*(?:ethorion|ethorions|eth)\b/);
+    if(m) return clamp(parseInt(m[1],10)||1, 1, 50);
+    // fallback: "x3" as quick notation
+    const m2 = t.match(/\bx\s*(\d{1,2})\b/);
+    if(m2) return clamp(parseInt(m2[1],10)||1, 1, 50);
+    return null;
+  }
+  function parseMinutes(text){
+    const t = text.toLowerCase();
+    const m = t.match(/(\d{1,3})\s*(?:minutes|minute|min)\b/);
+    if(m) return clamp(parseInt(m[1],10)||0, 1, 999);
+    return null;
+  }
+  function parseImportance(text){
+    const t = text.toLowerCase();
+    const m = t.match(/\b(?:importance|prio|priorité)\s*(\d)\b/);
+    if(m) return clamp(parseInt(m[1],10)||2, 1, 3);
+    return null;
+  }
+  function removeMetaFromTitle(raw){
+    // keep the first chunk as title if user uses separators
+    const x = raw.replace(/\s*[—–]\s*/g, " – ");
+    const parts = x.split(" – ").map(p=>p.trim()).filter(Boolean);
+    return (parts[0] || raw).trim();
+  }
+  function inferEnergyTag(title, category){
+    const t = (title+" "+(category||"")).toLowerCase();
+    if(/\b(appeler|tel|tél|téléphone|mail|email|ranger|trier|imprimer|scanner|encode|encodage)\b/.test(t)) return 1;
+    if(/\b(rapport|rédaction|analyse|dossier|note|compte rendu|présentation)\b/.test(t)) return 3;
+    return 2;
+  }
+
+  function parsePasted(raw){
+    const lines = String(raw||"").split(/\r?\n/).map(cleanLine);
+    let currentCategory = "Sans catégorie";
+    const out = [];
+
+    for(const line0 of lines){
+      const line = line0.trim();
+      if(!line) continue;
+
+      // allow "Catégorie: xxx" as explicit category marker
+      const catm = line.match(/^(?:cat(?:égorie)?\s*[:\-])\s*(.+)$/i);
+      if(catm && catm[1]){
+        currentCategory = cleanLine(catm[1]) || currentCategory;
+        continue;
+      }
+
+      if(!isTaskLike(line)){
+        currentCategory = line.replace(/:+$/,"").trim() || currentCategory;
+        continue;
+      }
+
+      const body = stripTaskPrefix(line);
+      const eth = parseEthorion(body) ?? 3;
+      const minutes = parseMinutes(body);
+      const prio = parseImportance(body) ?? 2;
+
+      const title = cleanLine(removeMetaFromTitle(body));
+      if(!title) continue;
+
+      out.push({
+        title,
+        category: currentCategory,
+        ethorionTotal: eth,
+        ethorionRemaining: eth,
+        minutesHint: minutes || null,
+        priority: prio,
+        energyTag: inferEnergyTag(title, currentCategory)
+      });
+    }
+
+    return out;
+  }
+
+  /* =========================
+     Task ops
+     ========================= */
+  function getTask(id){ return state.tasks.find(t=>t.id===id) || null; }
+
+  function nextOrder(){
+    const act = state.tasks.filter(t=>!t.done);
+    return act.length ? (Math.max(...act.map(t=>t.order||0)) + 1) : 1;
+  }
+
+  function addTasksFromText(raw){
+    const parsed = parsePasted(raw);
+    if(!parsed.length){
+      showToast("Rien détecté. Mets des puces/tirets/numéros.", 2400);
+      return;
+    }
+    pushHistory(`Ajout ${parsed.length} tâche(s)`);
+
+    const start = nextOrder();
+    parsed.forEach((p,i)=>{
+      state.tasks.push({
+        id: uid(),
+        title: p.title,
+        category: p.category,
+        ethorionTotal: p.ethorionTotal,
+        ethorionRemaining: p.ethorionRemaining,
+        minutesHint: p.minutesHint,
+        priority: p.priority,
+        energyTag: p.energyTag,
+        notes: "",
+        done: false,
+        order: start+i,
+        createdAt: now(),
+        doneAt: null
+      });
+    });
+
+    ensureDay();
+    if(!state.focusId){
+      const t = pickWeightedTask();
+      if(t) state.focusId = t.id;
+    }
+
+    save();
+    renderAll();
+    showToast("Ajouté.", 1600);
+    setFloat(pick(FLOAT_LOCK));
+  }
+
+  function finishTask(taskId){
+    const t = getTask(taskId);
+    if(!t) return;
+
+    pushHistory("Terminer tâche");
+    t.done = true;
+    t.doneAt = now();
+    t.ethorionRemaining = 0;
+
+    flash(0.10);
+    confettiBurst();
+    showToast(pick(DONE_LINES), 2200);
+
+    const next = pickWeightedTask();
+    state.focusId = next ? next.id : null;
+
+    save();
+    renderAll();
+  }
+
+  function degoOne(){
+    const t = getTask(state.focusId);
+    if(!t){
+      showToast("CIBLE INDISPONIBLE.", 1800);
+      return;
+    }
+
+    pushHistory("Dégommage");
+    t.ethorionRemaining = Math.max(0, (t.ethorionRemaining||0) - 1);
+
+    flash(0.08);
+    pulseGlow();
+    showToast(pick(LINES), 1700);
+
+    if(t.ethorionRemaining===0){
+      finishTask(t.id);
+      return;
+    }
+
+    save();
+    renderAll();
+  }
+
+  function skip(){
+    const next = pickWeightedTask();
+    state.focusId = next ? next.id : null;
+    save();
+    renderAll();
+    showToast(next ? "CIBLE CHANGÉE." : "PLUS DE CIBLES.", 1700);
+    setFloat(next ? pick(FLOAT_LOCK) : pick(FLOAT_IDLE));
+  }
+
+  /* =========================
+     Roulette (weighted)
+     ========================= */
+  function pickWeightedTask(){
+    const pool = state.tasks.filter(t=>!t.done && (t.ethorionRemaining||0) > 0);
+    if(!pool.length) return null;
+
+    const E = state.energy.level;       // 1..3
+    const M = state.energy.motivation;  // 1..3
+
+    const weights = pool.map(t=>{
+      const rem = Math.max(1, Math.ceil(t.ethorionRemaining||1));
+      const pr = (t.priority===3? 3 : t.priority===2? 2 : 1);
+
+      let fit = 1.0;
+      if(E===1) fit *= (t.energyTag===1 ? 1.60 : t.energyTag===2 ? 0.95 : 0.55);
+      else if(E===2) fit *= (t.energyTag===1 ? 1.10 : t.energyTag===2 ? 1.30 : 0.95);
+      else fit *= (t.energyTag===3 ? 1.40 : 1.05);
+
+      let mot = 1.0;
+      if(M===1) mot *= (rem<=2 ? 1.60 : rem<=4 ? 1.05 : 0.70);
+      else if(M===2) mot *= (rem<=3 ? 1.15 : 1.00);
+
+      return Math.max(0.2, rem * pr * fit * mot);
+    });
+
+    const total = weights.reduce((a,b)=>a+b,0);
+    let r = Math.random()*total;
+    for(let i=0;i<pool.length;i++){
+      r -= weights[i];
+      if(r<=0) return pool[i];
+    }
+    return pool[pool.length-1];
+  }
+
+  let rouletteLock = false;
+  function roulette(){
+    if(rouletteLock) return;
+    rouletteLock = true;
+
+    btnRoulette.disabled = true;
+    btnRoulette.classList.add("spinning");
+    setFloat("scan…");
+
+    const suspense = 720 + Math.floor(Math.random()*500);
+    setTimeout(()=>{
+      const t = pickWeightedTask();
+      if(t){
+        state.focusId = t.id;
+        setFloat(pick(FLOAT_LOCK));
+        showToast("Cible verrouillée.", 1600);
+        flash(0.10);
+        pulseGlow();
+      }else{
+        state.focusId = null;
+        setFloat("—");
+        showToast("Plus de cibles.", 1600);
+      }
+
+      btnRoulette.disabled = false;
+      btnRoulette.classList.remove("spinning");
+      rouletteLock = false;
+
+      save();
+      renderAll();
+    }, suspense);
+  }
+
+  /* =========================
+     Sorting helpers
+     ========================= */
+  function getActiveSorted(){
+    const items = state.tasks.filter(t=>!t.done);
+    const sort = state.ui.sort || "order";
+
+    if(sort==="prio"){
+      items.sort((a,b)=>(b.priority||2)-(a.priority||2) || (a.order||0)-(b.order||0));
+    }else if(sort==="eth"){
+      items.sort((a,b)=>(b.ethorionRemaining||0)-(a.ethorionRemaining||0) || (b.priority||2)-(a.priority||2));
+    }else if(sort==="cat"){
+      items.sort((a,b)=> (a.category||"").localeCompare(b.category||"", "fr") || (a.order||0)-(b.order||0));
+    }else{
+      items.sort((a,b)=>(a.order||0)-(b.order||0));
+    }
+    return items;
+  }
+
+  function sumActiveEth(){
+    return state.tasks.reduce((a,t)=>a + (t.done?0:(t.ethorionRemaining||0)), 0);
+  }
+  function countActiveTasks(){
+    return state.tasks.filter(t=>!t.done).length;
+  }
+
+  /* =========================
+     Render: counters + bars
+     (both bars start full and decrease)
+     ========================= */
+  function renderCounters(){
+    ensureDay();
+
+    const leftTasks = countActiveTasks();
+    const leftEth = sumActiveEth();
+
+    const startT = state.day.startTasks || leftTasks;
+    const startE = state.day.startEth || leftEth;
+
+    const elimEth = Math.max(0, startE - leftEth);
+
+    startTasksEl.textContent = String(startT);
+    leftTasksEl.textContent  = String(leftTasks);
+    startEthEl.textContent   = String(startE);
+    leftEthEl.textContent    = String(leftEth);
+    elimEthEl.textContent    = String(elimEth);
+
+    // GLOBAL bar = ETH left / startEth (FULL -> EMPTY)
+    const denom = Math.max(1, startE);
+    const pctLeft = clamp(Math.round((leftEth/denom)*100), 0, 100);
+    gFill.style.width = pctLeft + "%";
+
+    updateUndoRedo();
+  }
+
+  function renderFocus(){
+    const t = getTask(state.focusId);
+
+    if(!t){
+      focusTitle.textContent = "CIBLE EN COURS DE RECHERCHE";
+      focusMeta.textContent = "—";
+      tFill.style.width = "100%";
+      btnDego.disabled = true;
+      btnNotesTask.disabled = true;
+      btnDone.disabled = true;
+      btnSkip.disabled = false;
+      btnDego.textContent = "Dégommer 1 ethorion";
+      if(floatLine.textContent==="—") setFloat(pick(FLOAT_IDLE));
+      return;
+    }
+
+    focusTitle.textContent = t.title;
+
+    const hintMin = t.minutesHint ? ` · ${t.minutesHint} min` : "";
+    const pr = `P${t.priority}`;
+    const cat = t.category || "Sans catégorie";
+    focusMeta.textContent = `${cat} · ${pr}${hintMin}`;
+
+    // TASK bar = ETH remaining / total (FULL -> EMPTY)
+    const total = Math.max(1, t.ethorionTotal||1);
+    const rem = clamp(t.ethorionRemaining||0, 0, total);
+    const pctLeft = clamp(Math.round((rem/total)*100), 0, 100);
+    tFill.style.width = pctLeft + "%";
+
+    btnDego.textContent = `Dégommer 1 ethorion (${rem}/${total})`;
+
+    btnDego.disabled = false;
+    btnNotesTask.disabled = false;
+    btnDone.disabled = false;
+
+    if(!floatLine.textContent || floatLine.textContent==="—"){
+      setFloat(pick(FLOAT_IDLE));
+    }
+  }
+
+  function renderAll(){
+    topbar.classList.toggle("hidden", !!state.ui.topbarHidden);
+    hint.classList.toggle("hidden", !!state.ui.hintHidden);
+    renderCounters();
+    renderFocus();
+    renderDrawer();
+  }
+
+  /* =========================
+     Drawer tabs (menu links = functional)
+     ========================= */
+  const TAB_DEFS = [
+    { key:"inbox",   label:"INBOX" },
+    { key:"liste",   label:"LISTE" },
+    { key:"cats",    label:"CAT" },
+    { key:"sets",    label:"SETS" },
+    { key:"energie", label:"ÉNERGIE" },
+    { key:"notes",   label:"NOTES" },
+    { key:"hist",    label:"HIST" },
+    { key:"rapport", label:"RAPPORT" },
+    { key:"ui",      label:"UI" }
+  ];
+
+  function openDrawer(tabKey){
+    overlay.classList.add("show");
+    drawer.classList.add("show");
+    if(tabKey) state.ui.activeTab = tabKey;
+    save();
+    renderDrawer();
+  }
+  function closeDrawer(){
+    overlay.classList.remove("show");
+    drawer.classList.remove("show");
+  }
+  function setTab(key){
+    state.ui.activeTab = key;
+    save();
+    renderDrawer();
+  }
+
+  function renderTabs(){
+    tabs.innerHTML = "";
+    TAB_DEFS.forEach(t=>{
+      const b = document.createElement("button");
+      b.className = "tab" + (state.ui.activeTab===t.key ? " active" : "");
+      b.textContent = t.label;
+      b.addEventListener("click", ()=> setTab(t.key));
+      tabs.appendChild(b);
+    });
+  }
+
+  function miniPct(rem,total){
+    total = Math.max(1, total||1);
+    rem = clamp(rem||0, 0, total);
+    return clamp(Math.round((rem/total)*100), 0, 100);
+  }
+
+  function renderTaskRow(t){
+    const row = document.createElement("div");
+    row.className = "trow";
+    const pct = miniPct(t.ethorionRemaining, t.ethorionTotal);
+
+    row.innerHTML = `
+      <div class="trowTop">
+        <div style="min-width:0;">
+          <div class="tname ${t.done ? "done":""}">${esc(t.title)}</div>
+          <div class="tmini">
+            <span>${esc(t.category || "Sans catégorie")}</span>
+            <span>·</span>
+            <span>P${esc(String(t.priority || 2))}</span>
+            <span>·</span>
+            <span>ETH ${esc(String(t.ethorionRemaining||0))}/${esc(String(t.ethorionTotal||0))}</span>
+          </div>
+        </div>
+        <div class="tacts">
+          ${!t.done ? `<button class="btn" data-a="focus">FOCUS</button>` : ""}
+          ${!t.done ? `<button class="btn" data-a="ok">OK</button>` : ""}
+        </div>
+      </div>
+      <div class="miniBar"><div class="miniFill" style="width:${pct}%"></div></div>
+    `;
+
+    row.querySelectorAll("[data-a]").forEach(btn=>{
+      const a = btn.dataset.a;
+      btn.addEventListener("click", ()=>{
+        if(a==="focus"){ state.focusId = t.id; save(); renderAll(); closeDrawer(); }
+        if(a==="ok"){ finishTask(t.id); }
+      });
+    });
+
+    return row;
+  }
+
+  function groupByCategory(tasks){
+    const m = new Map();
+    tasks.forEach(t=>{
+      const k = t.category || "Sans catégorie";
+      if(!m.has(k)) m.set(k, []);
+      m.get(k).push(t);
+    });
+    const keys = [...m.keys()].sort((a,b)=>a.localeCompare(b, "fr"));
+    return {m, keys};
+  }
+
+  /* =========================
+     Drawer panels
+     ========================= */
+  function renderInbox(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `
+      <div class="pTitle"><span>INBOX</span><span>Ctrl/⌘+Enter</span></div>
+      <textarea id="inboxTA" placeholder="Catégorie
+- Tâche — 3 ethorions — 15 minutes — importance 2
+• Autre tâche…
+1) Autre format…
+cat: Téléphone
+- Appeler X — 1 eth — prio 3"></textarea>
+      <div class="rowBtns">
+        <button class="btn" id="btnAdd">AJOUTER</button>
+      </div>
+    `;
+    const ta = p.querySelector("#inboxTA");
+    const add = p.querySelector("#btnAdd");
+
+    add.addEventListener("click", ()=>{
+      addTasksFromText(ta.value);
+      ta.value = "";
+    });
+
+    ta.addEventListener("keydown", (e)=>{
+      if((e.ctrlKey||e.metaKey) && e.key==="Enter"){
+        e.preventDefault();
+        add.click();
+      }
+    });
+
+    return p;
+  }
+
+  function renderList(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `
+      <div class="pTitle">
+        <span>LISTE</span>
+        <span>
+          <select id="sortSel" aria-label="Tri">
+            <option value="order">Tri: ordre</option>
+            <option value="prio">Tri: priorité</option>
+            <option value="eth">Tri: ethorion</option>
+            <option value="cat">Tri: catégorie</option>
+          </select>
+        </span>
+      </div>
+      <div class="list" id="taskList"></div>
+      <details>
+        <summary>TERMINÉ</summary>
+        <div class="inside"><div class="list" id="doneList"></div></div>
+      </details>
+    `;
+
+    const sortSel = p.querySelector("#sortSel");
+    sortSel.value = state.ui.sort || "order";
+    sortSel.addEventListener("change", ()=>{
+      pushHistory("Tri");
+      state.ui.sort = sortSel.value;
+      save();
+      renderDrawer();
+    });
+
+    const list = p.querySelector("#taskList");
+    getActiveSorted().forEach(t=> list.appendChild(renderTaskRow(t)));
+
+    const doneList = p.querySelector("#doneList");
+    state.tasks
+      .filter(t=>t.done)
+      .sort((a,b)=>(b.doneAt||0)-(a.doneAt||0))
+      .slice(0, 120)
+      .forEach(t=> doneList.appendChild(renderTaskRow(t)));
+
+    return p;
+  }
+
+  function renderCats(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `<div class="pTitle"><span>CATÉGORIES</span><span>groupées</span></div>`;
+
+    const items = state.tasks.filter(t=>!t.done);
+    const {m, keys} = groupByCategory(items);
+
+    keys.forEach(cat=>{
+      const det = document.createElement("details");
+      const sumEth = m.get(cat).reduce((a,t)=>a+(t.ethorionRemaining||0),0);
+
+      const sum = document.createElement("summary");
+      sum.textContent = `${cat} — ETH ${sumEth}`;
+      det.appendChild(sum);
+
+      const inside = document.createElement("div");
+      inside.className = "inside";
+      const list = document.createElement("div");
+      list.className = "list";
+      m.get(cat).forEach(t=> list.appendChild(renderTaskRow(t)));
+      inside.appendChild(list);
+      det.appendChild(inside);
+
+      p.appendChild(det);
+    });
+
+    return p;
+  }
+
+  function renderSets(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `<div class="pTitle"><span>SETS</span><span>appliquer</span></div><div class="list" id="setsList"></div>`;
+
+    const list = p.querySelector("#setsList");
+    state.sets.forEach(s=>{
+      const row = document.createElement("div");
+      row.className = "trow";
+      row.innerHTML = `
+        <div class="trowTop">
+          <div>
+            <div class="tname">${esc(s.name)}</div>
+            <div class="tmini">${esc(String((s.lines||[]).length))} lignes</div>
+          </div>
+          <div class="tacts"><button class="btn" data-a="apply">APPLIQUER</button></div>
+        </div>
+      `;
+      row.querySelector('[data-a="apply"]').addEventListener("click", ()=>{
+        addTasksFromText((s.lines||[]).join("\n"));
+        showToast("Set appliqué.", 1500);
+      });
+      list.appendChild(row);
+    });
+
+    return p;
+  }
+
+  function renderEnergy(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `
+      <div class="pTitle"><span>ÉNERGIE</span><span>influence roulette</span></div>
+      <select id="lvl">
+        <option value="1">Énergie: basse</option>
+        <option value="2">Énergie: moyenne</option>
+        <option value="3">Énergie: haute</option>
+      </select>
+      <select id="mot">
+        <option value="1">Motivation: basse</option>
+        <option value="2">Motivation: moyenne</option>
+        <option value="3">Motivation: haute</option>
+      </select>
+      <div class="rowBtns"><button class="btn" id="btnApply">APPLIQUER</button></div>
+    `;
+
+    const lvl = p.querySelector("#lvl");
+    const mot = p.querySelector("#mot");
+    lvl.value = String(state.energy.level||2);
+    mot.value = String(state.energy.motivation||2);
+
+    p.querySelector("#btnApply").addEventListener("click", ()=>{
+      pushHistory("Énergie réglée");
+      state.energy.level = parseInt(lvl.value,10);
+      state.energy.motivation = parseInt(mot.value,10);
+      save();
+      renderAll();
+      showToast("OK", 1200);
+      setFloat(pick(FLOAT_IDLE));
+    });
+
+    return p;
+  }
+
+  function renderNotes(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    const t = getTask(state.focusId);
+
+    p.innerHTML = `
+      <div class="pTitle"><span>NOTES</span><span>persistantes</span></div>
+
+      <details open>
+        <summary>NOTES JOUR</summary>
+        <div class="inside">
+          <textarea id="dayNotesTA" placeholder="Notes au vol…">${esc(state.dayNotes||"")}</textarea>
+          <div class="rowBtns"><button class="btn" id="btnSaveDay">ENREGISTRER</button></div>
+        </div>
+      </details>
+
+      <details ${t && t.notes ? "open" : ""}>
+        <summary>NOTES TÂCHE</summary>
+        <div class="inside">
+          <div class="tmini">${t ? esc(t.title) : "Aucune cible"}</div>
+          <textarea id="taskNotesTA" placeholder="Notes tâche…">${esc(t ? (t.notes||"") : "")}</textarea>
+          <div class="rowBtns"><button class="btn" id="btnSaveTask" ${t ? "" : "disabled"}>ENREGISTRER</button></div>
+        </div>
+      </details>
+    `;
+
+    const dayTA = p.querySelector("#dayNotesTA");
+    p.querySelector("#btnSaveDay").addEventListener("click", ()=>{
+      pushHistory("Notes jour");
+      state.dayNotes = String(dayTA.value||"").slice(0, 30000);
+      save();
+      showToast("Notes jour OK.", 1200);
+    });
+
+    if(t){
+      const taskTA = p.querySelector("#taskNotesTA");
+      p.querySelector("#btnSaveTask").addEventListener("click", ()=>{
+        pushHistory("Notes tâche");
+        t.notes = String(taskTA.value||"").slice(0, 30000);
+        save();
+        showToast("Notes tâche OK.", 1200);
+      });
+    }
+
+    return p;
+  }
+
+  function renderHist(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `<div class="pTitle"><span>HISTORIQUE</span><span>journal</span></div><div class="list" id="evList"></div>`;
+
+    const list = p.querySelector("#evList");
+    state.events.slice().reverse().slice(0, 180).forEach(ev=>{
+      const row = document.createElement("div");
+      row.className = "trow";
+      const d = new Date(ev.t);
+      const ts = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      row.innerHTML = `<div class="tmini"><b>${esc(ts)}</b> · ${esc(ev.text)}</div>`;
+      list.appendChild(row);
+    });
+    return p;
+  }
+
+  function renderRapport(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `<div class="pTitle"><span>RAPPORT</span><span>quotidien</span></div>`;
+
+    const active = state.tasks.filter(t=>!t.done);
+    const done = state.tasks.filter(t=>t.done);
+    const leftEth = active.reduce((a,t)=>a+(t.ethorionRemaining||0),0);
+    const startEth = state.day.startEth || 0;
+    const elimEth = Math.max(0, startEth - leftEth);
+
+    const box = document.createElement("div");
+    box.className = "trow";
+    box.innerHTML = `
+      <div class="tname">Aujourd’hui (${esc(state.day.id)})</div>
+      <div class="tmini">Départ: ${esc(String(state.day.startTasks||0))} tâches · ${esc(String(startEth))} ETH</div>
+      <div class="tmini">Reste: ${esc(String(active.length))} tâches · ${esc(String(leftEth))} ETH</div>
+      <div class="tmini">Éliminé: ${esc(String(elimEth))} ETH · Terminé: ${esc(String(done.length))} tâches</div>
+    `;
+    p.appendChild(box);
+
+    // Category remaining stats
+    const {m, keys} = groupByCategory(active);
+    if(keys.length){
+      const det = document.createElement("details");
+      const sum = document.createElement("summary");
+      sum.textContent = "RESTE PAR CATÉGORIE";
+      det.appendChild(sum);
+      const inside = document.createElement("div");
+      inside.className = "inside";
+      keys.forEach(cat=>{
+        const eth = m.get(cat).reduce((a,t)=>a+(t.ethorionRemaining||0),0);
+        const r = document.createElement("div");
+        r.className = "trow";
+        r.innerHTML = `<div class="tmini"><b>${esc(cat)}</b> · ETH ${esc(String(eth))}</div>`;
+        inside.appendChild(r);
+      });
+      det.appendChild(inside);
+      p.appendChild(det);
+    }
+
+    // Previous saved reports (last 10)
+    const repKeys = Object.keys(state.reports||{}).sort().reverse().slice(0, 10);
+    if(repKeys.length){
+      const det = document.createElement("details");
+      const sum = document.createElement("summary");
+      sum.textContent = "ARCHIVE (10 derniers jours)";
+      det.appendChild(sum);
+
+      const inside = document.createElement("div");
+      inside.className = "inside";
+      repKeys.forEach(k=>{
+        const rep = state.reports[k];
+        const r = document.createElement("div");
+        r.className = "trow";
+        r.innerHTML = `
+          <div class="tmini"><b>${esc(rep.day)}</b> · Départ ${esc(String(rep.startEth))} ETH · Éliminé ${esc(String(rep.elimEth))} ETH · Reste ${esc(String(rep.leftEth))} ETH</div>
+        `;
+        inside.appendChild(r);
+      });
+
+      det.appendChild(inside);
+      p.appendChild(det);
+    }
+
+    return p;
+  }
+
+  function renderUI(){
+    const p = document.createElement("div");
+    p.className = "panel";
+    p.innerHTML = `
+      <div class="pTitle"><span>UI</span><span>options</span></div>
+
+      <div class="trow">
+        <div class="trowTop">
+          <div>
+            <div class="tname">Topbar</div>
+            <div class="tmini">Masquer/afficher les compteurs.</div>
+          </div>
+          <div class="tacts"><button class="btn" id="btnTTop">${state.ui.topbarHidden ? "AFFICHER" : "MASQUER"}</button></div>
+        </div>
+      </div>
+
+      <div class="trow">
+        <div class="trowTop">
+          <div>
+            <div class="tname">Hint</div>
+            <div class="tmini">Masquer/afficher l’aide.</div>
+          </div>
+          <div class="tacts"><button class="btn" id="btnTHint">${state.ui.hintHidden ? "AFFICHER" : "MASQUER"}</button></div>
+        </div>
+      </div>
+
+      <details>
+        <summary>EXPORT / IMPORT</summary>
+        <div class="inside">
+          <button class="btn" id="btnExport">EXPORT JSON</button>
+          <textarea id="jsonTA" placeholder="Colle ici un export JSON pour importer…"></textarea>
+          <div class="rowBtns">
+            <button class="btn" id="btnImport">IMPORT JSON</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="trow">
+        <div class="trowTop">
+          <div>
+            <div class="tname">Reset</div>
+            <div class="tmini">Efface tout. Irréversible.</div>
+          </div>
+          <div class="tacts"><button class="btn" id="btnReset">RESET</button></div>
+        </div>
+      </div>
+    `;
+
+    p.querySelector("#btnTTop").addEventListener("click", ()=>{
+      pushHistory("UI topbar");
+      state.ui.topbarHidden = !state.ui.topbarHidden;
+      save(); renderAll();
+    });
+
+    p.querySelector("#btnTHint").addEventListener("click", ()=>{
+      pushHistory("UI hint");
+      state.ui.hintHidden = !state.ui.hintHidden;
+      save(); renderAll();
+    });
+
+    p.querySelector("#btnExport").addEventListener("click", ()=>{
+      finalizeDayReport(state.day.id);
+      const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `eliminator-${state.day.id}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast("Export JSON téléchargé.", 1600);
+    });
+
+    p.querySelector("#btnImport").addEventListener("click", ()=>{
+      const ta = p.querySelector("#jsonTA");
+      try{
+        const obj = JSON.parse(String(ta.value||"").trim());
+        if(!obj || !Array.isArray(obj.tasks)) throw new Error("invalide");
+        pushHistory("Import JSON");
+        state = obj;
+        // normalize
+        state.version = 4;
+        if(!state.history) state.history = {undo:[], redo:[]};
+        if(!state.events) state.events = [];
+        if(!state.reports) state.reports = {};
+        if(!state.sets) state.sets = buildSets();
+        if(!state.day) state.day = {id: isoDay(), startTasks:0, startEth:0};
+        if(!state.ui) state.ui = {activeTab:"inbox", sort:"order", topbarHidden:false, hintHidden:false};
+        if(!state.energy) state.energy = {level:2, motivation:2};
+        save();
+        renderAll();
+        showToast("Import OK.", 1600);
+      }catch{
+        showToast("JSON invalide.", 2000);
+      }
+    });
+
+    p.querySelector("#btnReset").addEventListener("click", ()=>{
+      if(!confirm("Reset total ?")) return;
+      localStorage.removeItem(LS_KEY);
+      state = initial();
+      save();
+      closeDrawer();
+      renderAll();
+      showToast("Reset OK.", 1400);
+    });
+
+    return p;
+  }
+
+  function renderDrawer(){
+    renderTabs();
+    drawerBody.innerHTML = "";
+
+    const tab = state.ui.activeTab || "inbox";
+    if(tab==="inbox") drawerBody.appendChild(renderInbox());
+    else if(tab==="liste") drawerBody.appendChild(renderList());
+    else if(tab==="cats") drawerBody.appendChild(renderCats());
+    else if(tab==="sets") drawerBody.appendChild(renderSets());
+    else if(tab==="energie") drawerBody.appendChild(renderEnergy());
+    else if(tab==="notes") drawerBody.appendChild(renderNotes());
+    else if(tab==="hist") drawerBody.appendChild(renderHist());
+    else if(tab==="rapport") drawerBody.appendChild(renderRapport());
+    else if(tab==="ui") drawerBody.appendChild(renderUI());
+    else drawerBody.appendChild(renderInbox());
+  }
+
+  /* =========================
+     Menu wiring
+     ========================= */
+  btnMenu.addEventListener("click", ()=> openDrawer(state.ui.activeTab));
+  btnClose.addEventListener("click", closeDrawer);
+  overlay.addEventListener("click", closeDrawer);
+
+  // swipe to close (mobile)
+  let touchX0 = null;
+  drawer.addEventListener("pointerdown", (e)=>{
+    if(e.pointerType==="mouse") return;
+    touchX0 = e.clientX;
+  });
+  drawer.addEventListener("pointermove", (e)=>{
+    if(touchX0===null) return;
+    const dx = e.clientX - touchX0;
+    if(dx < -80){ touchX0 = null; closeDrawer(); }
+  });
+  drawer.addEventListener("pointerup", ()=> touchX0 = null);
+  drawer.addEventListener("pointercancel", ()=> touchX0 = null);
+
+  /* =========================
+     Buttons wiring
+     ========================= */
+  btnNewDay.addEventListener("click", newDay);
+  btnRoulette.addEventListener("click", roulette);
+  btnDego.addEventListener("click", degoOne);
+  btnDone.addEventListener("click", ()=> state.focusId ? finishTask(state.focusId) : showToast("Pas de cible.", 1400));
+  btnSkip.addEventListener("click", skip);
+  btnNotesTask.addEventListener("click", ()=> openDrawer("notes"));
+  btnNotesDay.addEventListener("click", ()=> openDrawer("notes"));
+  btnUndo.addEventListener("click", undo);
+  btnRedo.addEventListener("click", redo);
+
+  // keyboard shortcuts
+  window.addEventListener("keydown", (e)=>{
+    const k = e.key.toLowerCase();
+    if(k==="m") openDrawer(state.ui.activeTab);
+    if(k==="r") roulette();
+    if(k==="d") degoOne();
+    if(k==="escape") closeDrawer();
+  });
+
+  /* =========================
+     Toast
+     ========================= */
+  let toastTimer = null;
+  function showToast(msg, ms=1800){
+    toast.textContent = String(msg||"");
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>toast.classList.remove("show"), ms);
+  }
+
+  /* =========================
+     FX canvas: flash + glow + confetti
+     (simple, cheap, readable)
+     ========================= */
+  function resizeFx(){
+    const dpr = Math.max(1, window.devicePixelRatio||1);
+    fxCanvas.width = Math.floor(window.innerWidth * dpr);
+    fxCanvas.height = Math.floor(window.innerHeight * dpr);
+    fx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener("resize", resizeFx);
+  resizeFx();
+
+  function flash(alpha=0.10){
+    fx.save();
+    fx.globalAlpha = alpha;
+    fx.fillStyle = "#ffffff";
+    fx.fillRect(0,0, window.innerWidth, window.innerHeight);
+    fx.restore();
+    setTimeout(()=>fx.clearRect(0,0, window.innerWidth, window.innerHeight), 70);
+  }
+
+  let glowT = 0;
+  function pulseGlow(){
+    glowT = 12;
+  }
+
+  const confetti = [];
+  function confettiBurst(){
+    const cx = window.innerWidth/2;
+    const cy = Math.min(window.innerHeight*0.56, window.innerHeight-180);
+    for(let i=0;i<44;i++){
+      confetti.push({
+        x: cx,
+        y: cy,
+        vx: (Math.random()-0.5)*7.8,
+        vy: -Math.random()*6.5 - 2.8,
+        g: 0.22 + Math.random()*0.12,
+        s: 2 + Math.random()*3,
+        a: 1,
+        r: Math.random()*Math.PI*2
+      });
+    }
+  }
+
+  function tickFx(){
+    fx.clearRect(0,0, window.innerWidth, window.innerHeight);
+
+    // glow pulse overlay
+    if(glowT>0){
+      glowT--;
+      const a = 0.08 * (glowT/12);
+      fx.save();
+      fx.globalAlpha = a;
+      const grd = fx.createRadialGradient(window.innerWidth/2, window.innerHeight*0.52, 60, window.innerWidth/2, window.innerHeight*0.52, 520);
+      grd.addColorStop(0, "rgba(245,248,255,.85)");
+      grd.addColorStop(1, "rgba(245,248,255,0)");
+      fx.fillStyle = grd;
+      fx.fillRect(0,0, window.innerWidth, window.innerHeight);
+      fx.restore();
+    }
+
+    // confetti
+    if(confetti.length){
+      for(let i=confetti.length-1;i>=0;i--){
+        const p = confetti[i];
+        p.vy += p.g;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.r += 0.2;
+        p.a *= 0.985;
+
+        fx.save();
+        fx.globalAlpha = Math.max(0, Math.min(1, p.a));
+        fx.translate(p.x, p.y);
+        fx.rotate(p.r);
+        fx.fillStyle = "rgba(245,248,255,.85)";
+        fx.fillRect(-p.s, -p.s/2, p.s*2, p.s);
+        fx.restore();
+
+        if(p.a < 0.04 || p.y > window.innerHeight+60) confetti.splice(i,1);
+      }
+    }
+
+    requestAnimationFrame(tickFx);
+  }
+  tickFx();
+
+  /* =========================
+     Boot
+     ========================= */
+  function boot(){
+    setFloat(pick(FLOAT_IDLE));
+    ensureDay();
+    renderAll();
+    logEvent("Boot");
+    save();
+    showToast("ELIMINATOR chargé.", 1400);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
