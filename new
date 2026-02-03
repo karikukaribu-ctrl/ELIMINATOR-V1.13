@@ -2941,10 +2941,1452 @@ Tout le reste = tâches."></textarea>
       list.className = "list";
       m.get(cat).forEach(t=> list.appendChild(renderTaskRow(t)));
       inside.appendChild(list);
+
+      // Category inclusion toggle for active pool
+      const row = document.createElement("div");
+      row.className = "rowBtns";
+      row.style.justifyContent = "flex-start";
+      const inc = document.createElement("button");
+      inc.className = "btn topFx";
+      const selected = (state.mode?.includeCats||[]).includes(cat);
+      inc.textContent = selected ? "Retirer du pool" : "Inclure dans le pool";
+      inc.addEventListener("click", ()=>{
+        pushHistory("Pool catégorie");
+        const arr = state.mode.includeCats || [];
+        const set = new Set(arr);
+        if(set.has(cat)) set.delete(cat);
+        else set.add(cat);
+        state.mode.includeCats = [...set];
+        save();
+        renderDrawer();
+        renderFocus();
+        showToast("Pool mis à jour.", 1400);
+      });
+      row.appendChild(inc);
+
+      inside.appendChild(row);
       det.appendChild(inside);
 
       wrap.appendChild(det);
     });
 
+    // Quick actions
+    const actions = document.createElement("div");
+    actions.className = "rowBtns";
+    actions.innerHTML = `
+      <button class="btn topFx" id="catsAll">Tout inclure</button>
+      <button class="btn topFx" id="catsNone">Tout libérer</button>
+    `;
+    actions.querySelector("#catsAll").addEventListener("click", ()=>{
+      pushHistory("Cats all");
+      state.mode.includeCats = [...new Set(state.tasks.filter(t=>!t.done).map(t=>t.category||"Sans catégorie"))];
+      save();
+      renderDrawer();
+      showToast("Toutes catégories incluses.", 1600);
+    });
+    actions.querySelector("#catsNone").addEventListener("click", ()=>{
+      pushHistory("Cats none");
+      state.mode.includeCats = [];
+      save();
+      renderDrawer();
+      showToast("Pool libre (tout).", 1600);
+    });
+    wrap.appendChild(actions);
+
     return wrap;
   }
+
+  // =========================
+  // Sets (preset task bundles) + editable
+  // =========================
+  function renderDrawerSets(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Sets</span><span>pré-enregistrés</span></div>
+      <div class="tmini">Charge un set dans l'inbox, puis ajoute. Les sets sont **éditables** et enregistrés.</div>
+      <div class="list" id="setsList"></div>
+      <details>
+        <summary>Créer / éditer</summary>
+        <div class="inside">
+          <input id="setName" type="text" placeholder="Nom du set"/>
+          <textarea id="setLines" placeholder="Colle un contenu (catégories + tâches)"></textarea>
+          <div class="rowBtns">
+            <button class="btn topFx" id="setSaveNew">Enregistrer</button>
+            <button class="btn topFx" id="setUpdate" disabled>Mettre à jour</button>
+            <button class="btn" id="setClear">Vider</button>
+          </div>
+        </div>
+      </details>
+    `;
+
+    const list = wrap.querySelector("#setsList");
+    const nameI = wrap.querySelector("#setName");
+    const linesTA = wrap.querySelector("#setLines");
+    const saveNew = wrap.querySelector("#setSaveNew");
+    const updateBtn = wrap.querySelector("#setUpdate");
+    const clearBtn = wrap.querySelector("#setClear");
+
+    let editingId = null;
+
+    function renderSetsList(){
+      list.innerHTML = "";
+      (state.sets||[]).forEach(s=>{
+        const row = document.createElement("div");
+        row.className = "trow";
+        row.innerHTML = `
+          <div class="trowTop">
+            <div style="min-width:0;">
+              <div class="tname">${esc(s.name||"Set")}</div>
+              <div class="tmini">${esc((s.lines||[]).length)} ligne(s)</div>
+            </div>
+            <div class="tacts">
+              <button class="btn topFx" data-a="load">Charger</button>
+              <button class="btn topFx" data-a="edit">Éditer</button>
+              <button class="btn" data-a="del">X</button>
+            </div>
+          </div>
+        `;
+        row.querySelector('[data-a="load"]').addEventListener("click", ()=>{
+          state.scratch = (s.lines||[]).join("\n");
+          save();
+          showToast("Set chargé dans l'inbox.", 1600);
+          floatSay("Prêt à importer.", 2000);
+          setTab("inbox");
+        });
+        row.querySelector('[data-a="edit"]').addEventListener("click", ()=>{
+          editingId = s.id;
+          nameI.value = s.name||"";
+          linesTA.value = (s.lines||[]).join("\n");
+          updateBtn.disabled = false;
+          showToast("Mode édition.", 1400);
+        });
+        row.querySelector('[data-a="del"]').addEventListener("click", ()=>{
+          if(!confirm("Supprimer ce set ?")) return;
+          pushHistory("Supprimer set");
+          state.sets = (state.sets||[]).filter(x=>x.id!==s.id);
+          if(editingId===s.id){
+            editingId = null;
+            updateBtn.disabled = true;
+            nameI.value = "";
+            linesTA.value = "";
+          }
+          save();
+          renderDrawer();
+        });
+        list.appendChild(row);
+      });
+    }
+
+    saveNew.addEventListener("click", ()=>{
+      const nm = cleanLine(nameI.value) || "Nouveau set";
+      const lines = String(linesTA.value||"").split(/\r?\n/).map(cleanLine).filter(Boolean);
+      if(!lines.length){
+        showToast("Rien à enregistrer.", 1600);
+        return;
+      }
+      pushHistory("Créer set");
+      state.sets = state.sets || [];
+      state.sets.push({ id: uid(), name: nm, lines });
+      save();
+      renderSetsList();
+      showToast("Set enregistré.", 1600);
+    });
+
+    updateBtn.addEventListener("click", ()=>{
+      if(!editingId) return;
+      const s = (state.sets||[]).find(x=>x.id===editingId);
+      if(!s) return;
+      const nm = cleanLine(nameI.value) || s.name || "Set";
+      const lines = String(linesTA.value||"").split(/\r?\n/).map(cleanLine).filter(Boolean);
+      if(!lines.length){
+        showToast("Le set ne peut pas être vide.", 1800);
+        return;
+      }
+      pushHistory("Mettre à jour set");
+      s.name = nm;
+      s.lines = lines;
+      save();
+      renderSetsList();
+      showToast("Set mis à jour.", 1600);
+    });
+
+    clearBtn.addEventListener("click", ()=>{
+      editingId = null;
+      updateBtn.disabled = true;
+      nameI.value = "";
+      linesTA.value = "";
+      showToast("Éditeur vidé.", 1200);
+    });
+
+    renderSetsList();
+
+    // preload scratch to inbox editor if available
+    if(state.scratch){
+      linesTA.value = state.scratch;
+    }
+
+    return wrap;
+  }
+
+  // =========================
+  // Mode (roulette vs order) + rules
+  // =========================
+  function renderDrawerMode(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+
+    const pick = state.mode?.pick || "roulette";
+    const orderBy = state.mode?.orderBy || "prio";
+
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Mode</span><span>sélection</span></div>
+      <div class="tmini">Choisis comment ELIMINATOR te propose la prochaine cible. Ne pas confondre “ordre” et “pression” : c'est juste une mécanique.</div>
+
+      <div class="rowBtns" style="justify-content:flex-start;">
+        <button class="btn topFx" id="mRoulette">${pick==="roulette" ? "✓ " : ""}Roulette</button>
+        <button class="btn topFx" id="mOrder">${pick==="order" ? "✓ " : ""}Ordre</button>
+      </div>
+
+      <details ${pick==="order" ? "open":""}>
+        <summary>Ordre — critères</summary>
+        <div class="inside">
+          <select id="orderBy">
+            <option value="prio">Priorité</option>
+            <option value="alpha">Alphabétique</option>
+            <option value="chrono">Chronologie</option>
+            <option value="cat">Catégorie</option>
+            <option value="eth">ETH restants</option>
+          </select>
+          <div class="tmini">L'ordre n'ôte pas la roulette : il la met en sommeil.</div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Roulette — règles</summary>
+        <div class="inside">
+          <div class="tmini">Focus lock évite le “reroll compulsif”. Warm start force une première cible courte (si dispo).</div>
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="lockMinus">-10s</button>
+            <button class="btn topFx" id="lockPlus">+10s</button>
+            <span class="chip">Lock <b id="lockVal">—</b></span>
+          </div>
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="warmToggle">Warm start</button>
+            <span class="chip">Actif <b id="warmVal">—</b></span>
+          </div>
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="pinMinus">Pin -</button>
+            <button class="btn topFx" id="pinPlus">Pin +</button>
+            <span class="chip">Poids pin <b id="pinVal">—</b></span>
+          </div>
+        </div>
+      </details>
+    `;
+
+    const mRoulette = wrap.querySelector("#mRoulette");
+    const mOrder = wrap.querySelector("#mOrder");
+    const orderSel = wrap.querySelector("#orderBy");
+
+    mRoulette.addEventListener("click", ()=>{
+      pushHistory("Mode roulette");
+      state.mode.pick = "roulette";
+      save();
+      renderDrawer();
+      renderFocus();
+    });
+    mOrder.addEventListener("click", ()=>{
+      pushHistory("Mode ordre");
+      state.mode.pick = "order";
+      save();
+      renderDrawer();
+      renderFocus();
+    });
+
+    orderSel.value = orderBy;
+    orderSel.addEventListener("change", ()=>{
+      pushHistory("Order by");
+      state.mode.orderBy = orderSel.value;
+      save();
+      renderDrawer();
+    });
+
+    const lockVal = wrap.querySelector("#lockVal");
+    const warmVal = wrap.querySelector("#warmVal");
+    const pinVal = wrap.querySelector("#pinVal");
+
+    function refresh(){
+      const lockSec = clamp(Number(state.settings?.roulette?.focusLockSec||20), 0, 300);
+      lockVal.textContent = `${lockSec}s`;
+      warmVal.textContent = state.settings?.roulette?.warmStart ? "oui" : "non";
+      pinVal.textContent = String(clamp(Number(state.settings?.roulette?.pinWeight||2.4),1,6).toFixed(1));
+    }
+    refresh();
+
+    wrap.querySelector("#lockMinus").addEventListener("click", ()=>{
+      pushHistory("Lock -");
+      state.settings.roulette.focusLockSec = clamp(Number(state.settings.roulette.focusLockSec||20)-10, 0, 300);
+      save(); refresh();
+    });
+    wrap.querySelector("#lockPlus").addEventListener("click", ()=>{
+      pushHistory("Lock +");
+      state.settings.roulette.focusLockSec = clamp(Number(state.settings.roulette.focusLockSec||20)+10, 0, 300);
+      save(); refresh();
+    });
+    wrap.querySelector("#warmToggle").addEventListener("click", ()=>{
+      pushHistory("Warm toggle");
+      state.settings.roulette.warmStart = !state.settings.roulette.warmStart;
+      save(); refresh();
+    });
+    wrap.querySelector("#pinMinus").addEventListener("click", ()=>{
+      pushHistory("Pin -");
+      state.settings.roulette.pinWeight = clamp(Number(state.settings.roulette.pinWeight||2.4)-0.2, 1.0, 6.0);
+      save(); refresh();
+    });
+    wrap.querySelector("#pinPlus").addEventListener("click", ()=>{
+      pushHistory("Pin +");
+      state.settings.roulette.pinWeight = clamp(Number(state.settings.roulette.pinWeight||2.4)+0.2, 1.0, 6.0);
+      save(); refresh();
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Énergie (profile) — simple & non jugeant
+  // =========================
+  function renderDrawerEnergie(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Énergie</span><span>contextuelle</span></div>
+      <div class="tmini">Ce réglage sert à calibrer la roulette. Ce n'est ni un test ni un score. Juste une contrainte du moment.</div>
+
+      <details open>
+        <summary>Niveau d'énergie</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" data-e="1">basse</button>
+            <button class="btn topFx" data-e="2">moyenne</button>
+            <button class="btn topFx" data-e="3">haute</button>
+            <span class="chip">Actuel <b id="eNow">—</b></span>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Motivation (élan)</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" data-m="1">faible</button>
+            <button class="btn topFx" data-m="2">moyenne</button>
+            <button class="btn topFx" data-m="3">bonne</button>
+            <span class="chip">Actuel <b id="mNow">—</b></span>
+          </div>
+        </div>
+      </details>
+    `;
+
+    const eNow = wrap.querySelector("#eNow");
+    const mNow = wrap.querySelector("#mNow");
+
+    function refresh(){
+      eNow.textContent = energyLabel(state.energyProfile.level||2);
+      mNow.textContent = (state.energyProfile.motivation===1?"faible":state.energyProfile.motivation===2?"moyenne":"bonne");
+    }
+    refresh();
+
+    wrap.querySelectorAll("[data-e]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        pushHistory("Énergie");
+        state.energyProfile.level = Number(b.dataset.e);
+        save();
+        refresh();
+        renderFocus();
+        showToast("Énergie mise à jour.", 1200);
+      });
+    });
+
+    wrap.querySelectorAll("[data-m]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        pushHistory("Motivation");
+        state.energyProfile.motivation = Number(b.dataset.m);
+        save();
+        refresh();
+        showToast("Motivation mise à jour.", 1200);
+      });
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Params (theme, density, font, sounds, celebration)
+  // =========================
+  function renderDrawerParams(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+
+    const s = state.settings || {};
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Paramètres</span><span>UI/UX</span></div>
+
+      <details open>
+        <summary>Thème</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="thDark">${s.theme==="dark"?"✓ ":""}Sombre</button>
+            <button class="btn topFx" id="thLight">${s.theme==="light"?"✓ ":""}Clair</button>
+          </div>
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <select id="accentSel">
+              <option value="green">Accent (dark) : vert</option>
+              <option value="amber">Accent (dark) : ambre</option>
+              <option value="blue">Accent (dark) : bleu</option>
+              <option value="petrol">Accent (light) : pétrole</option>
+              <option value="indigo">Accent (light) : indigo</option>
+              <option value="graphite">Accent (light) : graphite</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Densité</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" data-d="compact">${s.density==="compact"?"✓ ":""}Compact</button>
+            <button class="btn topFx" data-d="comfort">${s.density==="comfort"?"✓ ":""}Confort</button>
+            <button class="btn topFx" data-d="cockpit">${s.density==="cockpit"?"✓ ":""}Cockpit</button>
+          </div>
+          <div class="tmini">Cockpit = 2 colonnes sur grands écrans. Sur mobile, ça reste simple.</div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Taille de police</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="fsMinus">-</button>
+            <button class="btn topFx" id="fsPlus">+</button>
+            <span class="chip">Scale <b id="fsVal">—</b></span>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Sons & célébrations</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="sndToggle">Sons</button>
+            <span class="chip">Actif <b id="sndVal">—</b></span>
+          </div>
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="boomToggle">Boom</button>
+            <span class="chip">Boom <b id="boomVal">—</b></span>
+          </div>
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="celNone">Célébration: none</button>
+            <button class="btn topFx" id="celToast">toast</button>
+            <button class="btn topFx" id="celModal">modal</button>
+          </div>
+          <div class="tmini">Aucune célébration agressive. L'objectif n'est pas de “récompenser”, juste de marquer un état.</div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Danger zone</summary>
+        <div class="inside">
+          <button class="btn" id="clearCalib">Effacer calibration</button>
+        </div>
+      </details>
+    `;
+
+    const accentSel = wrap.querySelector("#accentSel");
+    accentSel.value = s.accentPreset || (s.theme==="dark"?"green":"petrol");
+
+    function refresh(){
+      wrap.querySelector("#fsVal").textContent = String((state.settings.fontScale||1).toFixed(2));
+      wrap.querySelector("#sndVal").textContent = state.settings?.sound?.enabled ? "oui" : "non";
+      wrap.querySelector("#boomVal").textContent = state.settings?.sound?.boom ? "oui" : "non";
+    }
+    refresh();
+
+    wrap.querySelector("#thDark").addEventListener("click", ()=>{
+      pushHistory("Theme dark");
+      state.settings.theme = "dark";
+      if(!state.settings.accentPreset) state.settings.accentPreset="green";
+      save(); applySettingsToUI(); renderDrawer(); renderFocus();
+    });
+    wrap.querySelector("#thLight").addEventListener("click", ()=>{
+      pushHistory("Theme light");
+      state.settings.theme = "light";
+      if(!state.settings.accentPreset) state.settings.accentPreset="petrol";
+      save(); applySettingsToUI(); renderDrawer(); renderFocus();
+    });
+
+    accentSel.addEventListener("change", ()=>{
+      pushHistory("Accent");
+      state.settings.accentPreset = accentSel.value;
+      save(); applySettingsToUI(); renderFocus();
+      showToast("Accent mis à jour.", 1400);
+    });
+
+    wrap.querySelectorAll("[data-d]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        pushHistory("Density");
+        state.settings.density = b.dataset.d;
+        save(); applySettingsToUI(); renderDrawer(); renderFocus();
+      });
+    });
+
+    wrap.querySelector("#fsMinus").addEventListener("click", ()=>{
+      pushHistory("Font -");
+      state.settings.fontScale = clamp(Number(state.settings.fontScale||1)-0.05, 0.85, 1.25);
+      save(); applySettingsToUI(); refresh();
+    });
+    wrap.querySelector("#fsPlus").addEventListener("click", ()=>{
+      pushHistory("Font +");
+      state.settings.fontScale = clamp(Number(state.settings.fontScale||1)+0.05, 0.85, 1.25);
+      save(); applySettingsToUI(); refresh();
+    });
+
+    wrap.querySelector("#sndToggle").addEventListener("click", ()=>{
+      pushHistory("Sons toggle");
+      state.settings.sound.enabled = !state.settings.sound.enabled;
+      save(); refresh();
+    });
+    wrap.querySelector("#boomToggle").addEventListener("click", ()=>{
+      pushHistory("Boom toggle");
+      state.settings.sound.boom = !state.settings.sound.boom;
+      save(); refresh();
+    });
+
+    wrap.querySelector("#celNone").addEventListener("click", ()=>{
+      pushHistory("Celebration none");
+      state.settings.celebration.style = "none";
+      save(); showToast("OK", 900);
+    });
+    wrap.querySelector("#celToast").addEventListener("click", ()=>{
+      pushHistory("Celebration toast");
+      state.settings.celebration.style = "toast";
+      save(); showToast("OK", 900);
+    });
+    wrap.querySelector("#celModal").addEventListener("click", ()=>{
+      pushHistory("Celebration modal");
+      state.settings.celebration.style = "modal";
+      save(); showToast("OK", 900);
+    });
+
+    wrap.querySelector("#clearCalib").addEventListener("click", ()=>{
+      if(!confirm("Effacer l'historique de calibration ?")) return;
+      pushHistory("Clear calibration");
+      state.timeCalibration.entries = [];
+      state.timeCalibration.catStats = {};
+      save();
+      renderDrawer();
+      showToast("Calibration effacée.", 1600);
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Profiles (apply + save current as profile)
+  // =========================
+  function applyProfile(profileId){
+    const p = (state.profiles||[]).find(x=>x.id===profileId);
+    if(!p) return;
+    pushHistory("Appliquer profil");
+    state.settings = structuredClone(p.settings);
+    save();
+    applySettingsToUI();
+    renderAll();
+    showToast(`Profil: ${p.name}`, 1600);
+  }
+
+  function renderDrawerProfiles(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Profils</span><span>appliquer / éditer</span></div>
+      <div class="tmini">Tu peux appliquer un profil, ou enregistrer les paramètres actuels comme nouveau profil.</div>
+      <div class="list" id="pList"></div>
+      <details>
+        <summary>Créer un profil depuis l'état actuel</summary>
+        <div class="inside">
+          <input id="pName" type="text" placeholder="Nom du profil"/>
+          <div class="rowBtns">
+            <button class="btn topFx" id="pSave">Enregistrer</button>
+          </div>
+        </div>
+      </details>
+    `;
+
+    const pList = wrap.querySelector("#pList");
+    function renderList(){
+      pList.innerHTML = "";
+      (state.profiles||[]).forEach(p=>{
+        const row = document.createElement("div");
+        row.className = "trow";
+        row.innerHTML = `
+          <div class="trowTop">
+            <div style="min-width:0;">
+              <div class="tname">${esc(p.name||"Profil")}</div>
+              <div class="tmini">thème: ${esc(p.settings?.theme||"dark")} · densité: ${esc(p.settings?.density||"comfort")}</div>
+            </div>
+            <div class="tacts">
+              <button class="btn topFx" data-a="apply">Appliquer</button>
+              <button class="btn topFx" data-a="overwrite">Écraser</button>
+              <button class="btn" data-a="del">X</button>
+            </div>
+          </div>
+        `;
+        row.querySelector('[data-a="apply"]').addEventListener("click", ()=> applyProfile(p.id));
+
+        row.querySelector('[data-a="overwrite"]').addEventListener("click", ()=>{
+          if(!confirm("Remplacer ce profil par les paramètres actuels ?")) return;
+          pushHistory("Overwrite profil");
+          p.settings = structuredClone(state.settings);
+          save();
+          showToast("Profil mis à jour.", 1400);
+          renderList();
+        });
+
+        row.querySelector('[data-a="del"]').addEventListener("click", ()=>{
+          if(!confirm("Supprimer ce profil ?")) return;
+          pushHistory("Delete profil");
+          state.profiles = (state.profiles||[]).filter(x=>x.id!==p.id);
+          save();
+          renderList();
+        });
+
+        pList.appendChild(row);
+      });
+    }
+    renderList();
+
+    wrap.querySelector("#pSave").addEventListener("click", ()=>{
+      const nm = cleanLine(wrap.querySelector("#pName").value) || "Nouveau profil";
+      pushHistory("Créer profil");
+      state.profiles = state.profiles || [];
+      state.profiles.push({ id: uid(), name: nm, settings: structuredClone(state.settings) });
+      save();
+      renderList();
+      showToast("Profil enregistré.", 1600);
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Banks (editable text pools)
+  // =========================
+  function bankToText(arr){ return (arr||[]).join("\n"); }
+  function textToBank(txt){
+    return String(txt||"").split(/\r?\n/).map(cleanLine).filter(Boolean).slice(0, 80);
+  }
+
+  function renderDrawerBanks(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Textes</span><span>banques</span></div>
+      <div class="tmini">Ces textes sont **éditables**. Garder neutre. Pas de culpabilité. Pas de “hype” toxique.</div>
+
+      <details open>
+        <summary>Lignes flottantes</summary>
+        <div class="inside">
+          <textarea id="bLines"></textarea>
+        </div>
+      </details>
+
+      <details>
+        <summary>Fin (neutre)</summary>
+        <div class="inside">
+          <textarea id="bDone"></textarea>
+        </div>
+      </details>
+
+      <details>
+        <summary>Dépassement (neutre)</summary>
+        <div class="inside">
+          <textarea id="bOver"></textarea>
+        </div>
+      </details>
+
+      <details>
+        <summary>Retour kiffance</summary>
+        <div class="inside">
+          <textarea id="bKiffBack"></textarea>
+        </div>
+      </details>
+
+      <details>
+        <summary>Fin totale</summary>
+        <div class="inside">
+          <textarea id="bAll"></textarea>
+        </div>
+      </details>
+
+      <div class="rowBtns">
+        <button class="btn topFx" id="bSave">Enregistrer</button>
+        <button class="btn" id="bReset">Reset défaut</button>
+      </div>
+    `;
+
+    const b = state.banks || defaultBanks();
+    wrap.querySelector("#bLines").value = bankToText(b.lines);
+    wrap.querySelector("#bDone").value = bankToText(b.doneNeutral);
+    wrap.querySelector("#bOver").value = bankToText(b.overrunNeutral);
+    wrap.querySelector("#bKiffBack").value = bankToText(b.kiffReturn);
+    wrap.querySelector("#bAll").value = bankToText(b.finishAll);
+
+    wrap.querySelector("#bSave").addEventListener("click", ()=>{
+      pushHistory("Save banks");
+      state.banks = {
+        lines: textToBank(wrap.querySelector("#bLines").value),
+        doneNeutral: textToBank(wrap.querySelector("#bDone").value),
+        overrunNeutral: textToBank(wrap.querySelector("#bOver").value),
+        kiffReturn: textToBank(wrap.querySelector("#bKiffBack").value),
+        finishAll: textToBank(wrap.querySelector("#bAll").value),
+      };
+      save();
+      showToast("Textes enregistrés.", 1600);
+    });
+
+    wrap.querySelector("#bReset").addEventListener("click", ()=>{
+      if(!confirm("Revenir aux textes par défaut ?")) return;
+      pushHistory("Reset banks");
+      state.banks = defaultBanks();
+      save();
+      renderDrawer();
+      showToast("Textes par défaut.", 1600);
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Kiffance (rules + library editing)
+  // =========================
+  function renderDrawerKiffance(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+
+    const k = state.settings?.kiffance || {};
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Kiffance</span><span>régulateur borné</span></div>
+      <div class="tmini">Pas de scrolling. Pas de réseaux ouverts. Kiffance = pause courte + retour automatique.</div>
+
+      <details open>
+        <summary>Règles</summary>
+        <div class="inside">
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="kEnable">Activer</button>
+            <span class="chip">Actif <b id="kOn">—</b></span>
+          </div>
+
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="kMinMinus">Min -</button>
+            <button class="btn topFx" id="kMinPlus">Min +</button>
+            <span class="chip">Min budget <b id="kMinV">—</b></span>
+          </div>
+
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="kMaxMinus">Max -</button>
+            <button class="btn topFx" id="kMaxPlus">Max +</button>
+            <span class="chip">Max budget <b id="kMaxV">—</b></span>
+          </div>
+
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="kConMinus">Consec -</button>
+            <button class="btn topFx" id="kConPlus">Consec +</button>
+            <span class="chip">Max conséc. <b id="kConV">—</b></span>
+          </div>
+
+          <div class="rowBtns" style="justify-content:flex-start;">
+            <button class="btn topFx" id="kShort">Overrun → plus court</button>
+            <span class="chip">Actif <b id="kShortV">—</b></span>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Bibliothèque (éditable)</summary>
+        <div class="inside">
+          <div class="tmini">Format: une ligne = “label — duréeMin”. Ex: “Marche rapide — 5”.</div>
+
+          <details open>
+            <summary>Décharge</summary>
+            <div class="inside"><textarea id="kDecharge"></textarea></div>
+          </details>
+          <details>
+            <summary>Micro-cognitive</summary>
+            <div class="inside"><textarea id="kCognitive"></textarea></div>
+          </details>
+          <details>
+            <summary>Sociale ultra-contrôlée</summary>
+            <div class="inside"><textarea id="kSocial"></textarea></div>
+          </details>
+          <details>
+            <summary>Sens / recentrage</summary>
+            <div class="inside"><textarea id="kSens"></textarea></div>
+          </details>
+
+          <div class="rowBtns">
+            <button class="btn topFx" id="kSaveLib">Enregistrer</button>
+            <button class="btn" id="kResetLib">Reset défaut</button>
+          </div>
+        </div>
+      </details>
+    `;
+
+    function refresh(){
+      wrap.querySelector("#kOn").textContent = k.enabled ? "oui" : "non";
+      wrap.querySelector("#kMinV").textContent = String(k.budgetMinEth||20);
+      wrap.querySelector("#kMaxV").textContent = String(k.budgetMaxEth||35);
+      wrap.querySelector("#kConV").textContent = String(k.maxConsecutive||2);
+      wrap.querySelector("#kShortV").textContent = k.shortOnOverrun ? "oui" : "non";
+    }
+    refresh();
+
+    wrap.querySelector("#kEnable").addEventListener("click", ()=>{
+      pushHistory("Kiff enable");
+      state.settings.kiffance.enabled = !state.settings.kiffance.enabled;
+      save();
+      renderDrawer();
+    });
+
+    wrap.querySelector("#kMinMinus").addEventListener("click", ()=>{
+      pushHistory("Kiff min -");
+      state.settings.kiffance.budgetMinEth = clamp(Number(k.budgetMinEth||20)-2, 10, 180);
+      if(state.settings.kiffance.budgetMaxEth < state.settings.kiffance.budgetMinEth){
+        state.settings.kiffance.budgetMaxEth = state.settings.kiffance.budgetMinEth;
+      }
+      save(); renderDrawer();
+    });
+    wrap.querySelector("#kMinPlus").addEventListener("click", ()=>{
+      pushHistory("Kiff min +");
+      state.settings.kiffance.budgetMinEth = clamp(Number(k.budgetMinEth||20)+2, 10, 180);
+      save(); renderDrawer();
+    });
+    wrap.querySelector("#kMaxMinus").addEventListener("click", ()=>{
+      pushHistory("Kiff max -");
+      state.settings.kiffance.budgetMaxEth = clamp(Number(k.budgetMaxEth||35)-2, 10, 180);
+      if(state.settings.kiffance.budgetMaxEth < state.settings.kiffance.budgetMinEth){
+        state.settings.kiffance.budgetMinEth = state.settings.kiffance.budgetMaxEth;
+      }
+      save(); renderDrawer();
+    });
+    wrap.querySelector("#kMaxPlus").addEventListener("click", ()=>{
+      pushHistory("Kiff max +");
+      state.settings.kiffance.budgetMaxEth = clamp(Number(k.budgetMaxEth||35)+2, 10, 180);
+      save(); renderDrawer();
+    });
+
+    wrap.querySelector("#kConMinus").addEventListener("click", ()=>{
+      pushHistory("Kiff con -");
+      state.settings.kiffance.maxConsecutive = clamp(Number(k.maxConsecutive||2)-1, 0, 5);
+      save(); renderDrawer();
+    });
+    wrap.querySelector("#kConPlus").addEventListener("click", ()=>{
+      pushHistory("Kiff con +");
+      state.settings.kiffance.maxConsecutive = clamp(Number(k.maxConsecutive||2)+1, 0, 5);
+      save(); renderDrawer();
+    });
+
+    wrap.querySelector("#kShort").addEventListener("click", ()=>{
+      pushHistory("Kiff short");
+      state.settings.kiffance.shortOnOverrun = !state.settings.kiffance.shortOnOverrun;
+      save(); renderDrawer();
+    });
+
+    // Library
+    const lib = state.kiffanceLibrary || defaultKiffanceLibrary();
+
+    function libToText(arr){
+      return (arr||[]).map(x=> `${x.label} — ${x.durationMin||5}`).join("\n");
+    }
+    function textToLib(txt){
+      const lines = String(txt||"").split(/\r?\n/).map(cleanLine).filter(Boolean).slice(0, 60);
+      const out = [];
+      for(const ln of lines){
+        const parts = ln.split("—").map(s=>s.trim());
+        const label = parts[0] || "";
+        const dur = clamp(parseInt(parts[1],10)||5, 5, 20);
+        if(label) out.push({ label, durationMin: dur, tags:[], difficulty:2 });
+      }
+      return out;
+    }
+
+    wrap.querySelector("#kDecharge").value  = libToText(lib.decharge);
+    wrap.querySelector("#kCognitive").value = libToText(lib.microCognitive);
+    wrap.querySelector("#kSocial").value    = libToText(lib.socialeUltraControlee);
+    wrap.querySelector("#kSens").value      = libToText(lib.sensRecentrage);
+
+    wrap.querySelector("#kSaveLib").addEventListener("click", ()=>{
+      pushHistory("Save kiff lib");
+      state.kiffanceLibrary = {
+        decharge: textToLib(wrap.querySelector("#kDecharge").value),
+        microCognitive: textToLib(wrap.querySelector("#kCognitive").value),
+        socialeUltraControlee: textToLib(wrap.querySelector("#kSocial").value),
+        sensRecentrage: textToLib(wrap.querySelector("#kSens").value)
+      };
+      save();
+      showToast("Bibliothèque kiffance enregistrée.", 1800);
+    });
+
+    wrap.querySelector("#kResetLib").addEventListener("click", ()=>{
+      if(!confirm("Reset bibliothèque kiffance ?")) return;
+      pushHistory("Reset kiff lib");
+      state.kiffanceLibrary = defaultKiffanceLibrary();
+      save();
+      renderDrawer();
+      showToast("Bibliothèque par défaut.", 1800);
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Calibration (stats + recent entries)
+  // =========================
+  function renderDrawerCalib(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Calibration</span><span>apprentissage</span></div>
+      <div class="tmini">Les écarts servent à améliorer les futures estimations. Ils ne servent à rien d'autre.</div>
+      <details open>
+        <summary>Stats par catégorie</summary>
+        <div class="inside" id="calibStats"></div>
+      </details>
+      <details>
+        <summary>Dernières entrées</summary>
+        <div class="inside">
+          <div class="list" id="calibList"></div>
+        </div>
+      </details>
+    `;
+
+    const statsDiv = wrap.querySelector("#calibStats");
+    const stats = state.timeCalibration?.catStats || {};
+    const cats = Object.keys(stats).sort((a,b)=>a.localeCompare(b,"fr"));
+    if(!cats.length){
+      statsDiv.innerHTML = `<div class="tmini">Aucune donnée. Terminer une tâche pour commencer la calibration.</div>`;
+    } else {
+      const list = document.createElement("div");
+      list.className = "list";
+      cats.forEach(cat=>{
+        const st = stats[cat];
+        const row = document.createElement("div");
+        row.className = "trow";
+        const bias = (st.avgDeltaEth||0);
+        const ratio = (st.avgRatio||1);
+        row.innerHTML = `
+          <div class="trowTop">
+            <div style="min-width:0;">
+              <div class="tname">${esc(cat)}</div>
+              <div class="tmini">n=${esc(String(st.n||0))} · biais moyen (real-est) ≈ ${esc(bias.toFixed(1))} ETH · ratio ≈ ${esc(ratio.toFixed(2))}</div>
+            </div>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+      statsDiv.appendChild(list);
+    }
+
+    const calibList = wrap.querySelector("#calibList");
+    (state.timeCalibration?.entries||[])
+      .slice()
+      .sort((a,b)=>(b.ts||0)-(a.ts||0))
+      .slice(0, 30)
+      .forEach(e=>{
+        const row = document.createElement("div");
+        row.className = "trow";
+        row.innerHTML = `
+          <div class="trowTop">
+            <div style="min-width:0;">
+              <div class="tname">${esc(e.title||"")}</div>
+              <div class="tmini">
+                <span>${esc(e.category||"Sans catégorie")}</span>
+                <span>·</span>
+                <span>est ${esc(String(e.estEth))} ETH</span>
+                <span>·</span>
+                <span>réel ${esc(String(e.realEth))} ETH</span>
+                <span>·</span>
+                <span>Δ ${esc(String(e.deltaEth))} ETH</span>
+              </div>
+            </div>
+          </div>
+        `;
+        calibList.appendChild(row);
+      });
+
+    return wrap;
+  }
+
+  // =========================
+  // History (events + undo/redo counts)
+  // =========================
+  function renderDrawerHist(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Historique</span><span>journal</span></div>
+      <div class="tmini">Journal minimal des actions. Utile pour le “je fais quoi déjà ?”.</div>
+      <div class="rowBtns" style="justify-content:flex-start;">
+        <span class="chip">Undo <b>${state.history.undo.length}</b></span>
+        <span class="chip">Redo <b>${state.history.redo.length}</b></span>
+        <button class="btn topFx" id="evClear">Vider</button>
+      </div>
+      <details open>
+        <summary>Derniers événements</summary>
+        <div class="inside">
+          <div class="list" id="evList"></div>
+        </div>
+      </details>
+    `;
+
+    const list = wrap.querySelector("#evList");
+    (state.events||[])
+      .slice()
+      .sort((a,b)=>(b.t||0)-(a.t||0))
+      .slice(0, 80)
+      .forEach(e=>{
+        const d = new Date(e.t||0);
+        const hh = String(d.getHours()).padStart(2,"0");
+        const mm = String(d.getMinutes()).padStart(2,"0");
+        const row = document.createElement("div");
+        row.className = "trow";
+        row.innerHTML = `
+          <div class="tmini"><b>${hh}:${mm}</b> · ${esc(e.text||"")}</div>
+        `;
+        list.appendChild(row);
+      });
+
+    wrap.querySelector("#evClear").addEventListener("click", ()=>{
+      if(!confirm("Vider l'historique des événements ?")) return;
+      pushHistory("Clear events");
+      state.events = [];
+      save();
+      renderDrawer();
+      showToast("Historique vidé.", 1400);
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Rapport (daily report minimal)
+  // =========================
+  function renderDrawerRapport(){
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+
+    const today = state.day?.id || isoDay();
+    const done = state.tasks.filter(t=>t.done && t.doneAt && isoDay(new Date(t.doneAt))===today);
+    const entries = (state.timeCalibration?.entries||[]).filter(e=> isoDay(new Date(e.ts||0))===today);
+
+    const totalRealEth = entries.reduce((a,e)=>a+(e.realEth||0),0);
+    const totalRealMs = entries.reduce((a,e)=>a+(e.realMs||0),0);
+
+    wrap.innerHTML = `
+      <div class="cardTitle"><span>Rapport</span><span>${esc(today)}</span></div>
+      <div class="tmini">Auto-rapport neutre. Juste ce qui est fait, combien de temps, et à quelle heure.</div>
+
+      <div class="rowBtns" style="justify-content:flex-start;">
+        <span class="chip">Fait <b>${done.length}</b></span>
+        <span class="chip">ETH réels <b>${totalRealEth}</b></span>
+        <span class="chip">Temps <b>${hhmmHuman(totalRealMs)}</b></span>
+      </div>
+
+      <details open>
+        <summary>Détails</summary>
+        <div class="inside">
+          <textarea id="reportTA" style="min-height:220px;"></textarea>
+          <div class="rowBtns">
+            <button class="btn topFx" id="copyReport">Copier</button>
+          </div>
+        </div>
+      </details>
+    `;
+
+    const lines = [];
+    lines.push(`ELIMINATOR — rapport ${today}`);
+    lines.push(`Fait: ${done.length} tâche(s)`);
+    lines.push(`Temps réel total: ${hhmmHuman(totalRealMs)} (${totalRealEth} ETH)`);
+    lines.push(`—`);
+
+    // include per-task summary (from calibration entries)
+    entries
+      .slice()
+      .sort((a,b)=>(a.ts||0)-(b.ts||0))
+      .forEach(e=>{
+        const d = new Date(e.ts||0);
+        const hh = String(d.getHours()).padStart(2,"0");
+        const mm = String(d.getMinutes()).padStart(2,"0");
+        lines.push(`${hh}:${mm} · ${e.title} [${e.category}] · est ${e.estEth} ETH · réel ${e.realEth} ETH · Δ ${e.deltaEth} ETH`);
+      });
+
+    const ta = wrap.querySelector("#reportTA");
+    ta.value = lines.join("\n");
+
+    wrap.querySelector("#copyReport").addEventListener("click", async ()=>{
+      try{
+        await navigator.clipboard.writeText(ta.value);
+        showToast("Rapport copié.", 1400);
+      }catch{
+        ta.select();
+        document.execCommand("copy");
+        showToast("Rapport copié.", 1400);
+      }
+    });
+
+    return wrap;
+  }
+
+  // =========================
+  // Drawer: router
+  // =========================
+  function renderDrawer(){
+    renderTabs();
+    drawerBody.innerHTML = "";
+
+    const key = state.ui.activeTab || "inbox";
+    let view = null;
+
+    if(key==="inbox") view = renderDrawerInbox();
+    else if(key==="liste") view = renderDrawerList();
+    else if(key==="cats") view = renderDrawerCats();
+    else if(key==="sets") view = renderDrawerSets();
+    else if(key==="mode") view = renderDrawerMode();
+    else if(key==="energie") view = renderDrawerEnergie();
+    else if(key==="params") view = renderDrawerParams();
+    else if(key==="profiles") view = renderDrawerProfiles();
+    else if(key==="banks") view = renderDrawerBanks();
+    else if(key==="kiff") view = renderDrawerKiffance();
+    else if(key==="calib") view = renderDrawerCalib();
+    else if(key==="hist") view = renderDrawerHist();
+    else if(key==="rapport") view = renderDrawerRapport();
+    else view = renderDrawerInbox();
+
+    drawerBody.appendChild(view);
+  }
+
+  // =========================
+  // Drawer open/close
+  // =========================
+  function openDrawer(){
+    overlay.classList.add("show");
+    drawer.classList.add("show");
+    renderDrawer();
+  }
+  function closeDrawer(){
+    overlay.classList.remove("show");
+    drawer.classList.remove("show");
+  }
+
+  overlay.addEventListener("click", closeDrawer);
+  btnClose.addEventListener("click", closeDrawer);
+
+  btnMenu.addEventListener("click", openDrawer);
+  btnMiniMenu.addEventListener("click", openDrawer);
+
+  // =========================
+  // Notes (minimal)
+  // =========================
+  function editNotes(){
+    const t = getTask(state.focusId);
+    if(!t) return;
+    const txt = prompt("Notes (local) :", t.notes||"");
+    if(txt===null) return;
+    pushHistory("Notes");
+    t.notes = String(txt||"").slice(0, 1200);
+    save();
+    renderAll();
+    showToast("Notes enregistrées.", 1400);
+  }
+
+  // =========================
+  // Feedback modals
+  // =========================
+  let modalTimer = null;
+
+  function showModal({title, bodyHTML, note, showOk=false, overlayClass=""}){
+    if(modalTimer){ clearInterval(modalTimer); modalTimer=null; }
+    modalOverlay.className = "modalOverlay show " + (overlayClass||"");
+    modalTitle.textContent = title || "—";
+    modalBody.innerHTML = bodyHTML || "";
+    modalNote.textContent = note || "—";
+    modalOk.style.display = showOk ? "inline-flex" : "none";
+  }
+
+  function hideModal(){
+    if(modalTimer){ clearInterval(modalTimer); modalTimer=null; }
+    modalOverlay.className = "modalOverlay";
+    modalBody.innerHTML = "";
+  }
+
+  function showCalibrationModal(entry){
+    const body = `
+      <div class="kv">
+        <div class="k">Estimation</div><div class="v">${esc(entry.estEth)} ETH · ${esc(hhmmHuman(entry.estMs))}</div>
+        <div class="k">Temps réel</div><div class="v">${esc(entry.realEth)} ETH · ${esc(hhmmHuman(entry.realMs))}</div>
+        <div class="k">Écart</div><div class="v">${esc(entry.deltaEth)} ETH</div>
+        <div class="k">Catégorie</div><div class="v">${esc(entry.category||"Sans catégorie")}</div>
+      </div>
+    `;
+
+    const note = pick(state.banks.doneNeutral);
+
+    const style = state.settings?.celebration?.style || "modal";
+    const autoClose = clamp(Number(state.settings?.celebration?.autoCloseMs||2200), 800, 8000);
+
+    if(style === "none"){
+      // no modal: just toast
+      showToast(note, 2000);
+      return;
+    }
+    if(style === "toast"){
+      showToast(`OK. ${note}`, 2400);
+      return;
+    }
+
+    showModal({
+      title: "Calibration",
+      bodyHTML: body,
+      note,
+      showOk: false,
+      overlayClass: ""
+    });
+
+    setTimeout(()=> hideModal(), autoClose);
+  }
+
+  function showKiffanceModal(fam, item, durMs){
+    const badge = `<div class="kiffBadge">Zone de la kiffance</div>`;
+    const body = `
+      ${badge}
+      <div class="tmini" style="margin-top:6px;">
+        Famille: <b>${esc(fam)}</b>
+      </div>
+      <div class="tname" style="margin-top:4px;">${esc(item.label)}</div>
+      <div class="tmini" style="margin-top:6px;">Durée: <b id="kiffLeft">—</b> (fermeture automatique)</div>
+    `;
+    showModal({
+      title: "Pause bornée",
+      bodyHTML: body,
+      note: "Pas de fermeture manuelle. La pause finit et on reprend.",
+      showOk: false,
+      overlayClass: "kiffOverlay"
+    });
+
+    const endAt = now() + durMs;
+
+    function tick(){
+      const left = Math.max(0, endAt - now());
+      const kEl = document.getElementById("kiffLeft");
+      if(kEl) kEl.textContent = hhmmHuman(left);
+      if(left<=0){
+        clearInterval(modalTimer);
+        modalTimer = null;
+        endKiffance();
+      }
+    }
+    tick();
+    modalTimer = setInterval(tick, 250);
+  }
+
+  modalOk.addEventListener("click", hideModal);
+
+  // =========================
+  // Toast + float lines
+  // =========================
+  let toastT = null;
+  function showToast(msg, ms=1600){
+    if(toastT) clearTimeout(toastT);
+    toast.textContent = msg;
+    toast.classList.add("show");
+    toastT = setTimeout(()=> toast.classList.remove("show"), ms);
+  }
+
+  let floatT = null;
+  function floatSay(msg, ms=2200){
+    if(floatT) clearTimeout(floatT);
+    floatLine.textContent = msg || " ";
+    floatLine.classList.add("show");
+    floatT = setTimeout(()=> floatLine.classList.remove("show"), ms);
+  }
+
+  function pick(arr){
+    arr = arr || [];
+    if(!arr.length) return "";
+    return arr[Math.floor(Math.random()*arr.length)];
+  }
+
+  // =========================
+  // FX (simple, sober)
+  // =========================
+  function resizeFX(){
+    fxCanvas.width = window.innerWidth * devicePixelRatio;
+    fxCanvas.height = window.innerHeight * devicePixelRatio;
+    fx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  }
+  window.addEventListener("resize", resizeFX);
+  resizeFX();
+
+  function flashSoft(){
+    // subtle flash overlay on canvas
+    let a = 0.20;
+    const start = now();
+    const dur = 220;
+    function step(){
+      const t = now() - start;
+      const k = 1 - clamp(t/dur, 0, 1);
+      fx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+      fx.globalAlpha = a*k;
+      fx.fillStyle = "#ffffff";
+      fx.fillRect(0,0,fxCanvas.width,fxCanvas.height);
+      fx.globalAlpha = 1;
+      if(t < dur) requestAnimationFrame(step);
+      else fx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function confetti(intensity=1){
+    // minimalist particles, no colors specified in code requirement? (we keep grayscale-ish)
+    const count = Math.floor(24 * intensity);
+    const parts = [];
+    for(let i=0;i<count;i++){
+      parts.push({
+        x: window.innerWidth/2 + (Math.random()-0.5)*80,
+        y: window.innerHeight*0.25 + (Math.random()-0.5)*40,
+        vx: (Math.random()-0.5)*4,
+        vy: -Math.random()*5 - 2,
+        g: 0.14 + Math.random()*0.10,
+        life: 700 + Math.random()*500
+      });
+    }
+    const start = now();
+    function step(){
+      const t = now()-start;
+      fx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+      for(const p of parts){
+        const age = t;
+        if(age > p.life) continue;
+        p.vy += p.g;
+        p.x += p.vx;
+        p.y += p.vy;
+
+        const alpha = 1 - (age/p.life);
+        fx.globalAlpha = alpha*0.75;
+        fx.fillStyle = "rgba(255,255,255,0.9)";
+        fx.fillRect(p.x, p.y, 3, 3);
+      }
+      fx.globalAlpha = 1;
+      if(t < 1200) requestAnimationFrame(step);
+      else fx.clearRect(0,0,fxCanvas.width,fxCanvas.height);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // =========================
+  // Audio (WebAudio, no files)
+  // =========================
+  let audioCtx = null;
+  function ensureAudio(){
+    if(audioCtx) return audioCtx;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function playBoom(){
+    try{
+      const ctx = ensureAudio();
+      const t0 = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(220, t0);
+      o.frequency.exponentialRampToValueAtTime(70, t0+0.16);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(clamp(Number(state.settings?.sound?.volume||0.55),0.05,1.0)*0.25, t0+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+0.22);
+      o.connect(g).connect(ctx.destination);
+      o.start(t0);
+      o.stop(t0+0.25);
+    }catch{}
+  }
+
+  // =========================
+  // Wiring: top actions
+  // =========================
+  btnReset.addEventListener("click", resetAll);
+  btnRoulette.addEventListener("click", roulette);
+  btnDego.addEventListener("click", degoOne);
+  btnNotes.addEventListener("click", editNotes);
+  btnDone.addEventListener("click", ()=> {
+    const t = getTask(state.focusId);
+    if(!t) return;
+    finishTask(t.id);
+  });
+  btnSkip.addEventListener("click", skip);
+
+  // Est gate actions (no keyboard input)
+  estMinus1.addEventListener("click", ()=> adjustEstimate(-1));
+  estPlus1.addEventListener("click", ()=> adjustEstimate(+1));
+  estPlus2.addEventListener("click", ()=> adjustEstimate(+2));
+  estPlus5.addEventListener("click", ()=> adjustEstimate(+5));
+  estKeep.addEventListener("click", ()=> { showToast("OK. Garde.", 1200); });
+  estStart.addEventListener("click", startFocusFromEstimate);
+
+  // Undo/redo
+  btnUndo.addEventListener("click", undo);
+  btnRedo.addEventListener("click", redo);
+
+  // Kiff test button in cockpit
+  btnKiffTest.addEventListener("click", ()=>{
+    if(!state.settings?.kiffance?.enabled){
+      showToast("Kiffance désactivée.", 1400);
+      return;
+    }
+    startKiffance(false);
+  });
+
+  // =========================
+  // Loop: time HUD updates while focusing
+  // =========================
+  function tick(){
+    if(isFocusing()){
+      renderTimeHud();
+      renderFocus(); // includes progress bar (linear)
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // =========================
+  // Boot
+  // =========================
+  function boot(){
+    applySettingsToUI();
+    ensureDay();
+
+    // If we have a focusId but no session: enforce estimation gate
+    const t = getTask(state.focusId);
+    if(t && state.focusSession.state==="idle"){
+      enterPendingEstimate(t.id, "Boot");
+    }
+
+    renderAll();
+    requestAnimationFrame(tick);
+  }
+
+  boot();
+
+})();
+</script>
+</body>
+</html>
